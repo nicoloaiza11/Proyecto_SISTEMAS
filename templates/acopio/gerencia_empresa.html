@@ -1,0 +1,570 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Inteligencia Gerencial de Acopio · SOLTAT{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4">
+
+  <!-- 1. BANNER EJECUTIVO DE APOYO A LA DECISIÓN (GERENCIA DE PLANTA) -->
+  <div class="dss-hero-banner mb-4">
+    <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 position-relative" style="z-index: 1;">
+      <div>
+        <span class="badge mb-2 px-3 py-1" style="background: rgba(214,168,79,0.2); color: var(--color-accent); border: 1px solid rgba(214,168,79,0.45); font-family: 'Montserrat', sans-serif; font-size: 0.7rem; letter-spacing: 0.08em;">
+          SISTEMA DE APOYO A LA TOMA DE DECISIONES · GERENCIA DE ACOPIO
+        </span>
+        <h1 class="h2 text-white mb-1">{{ empresa_actual.nombre }}</h1>
+        <p class="text-white-50 small mb-0">
+          Ventana analizada: <strong class="text-white">{{ desde|date:"d/m/Y" }}</strong> al <strong class="text-white">{{ hasta|date:"d/m/Y" }}</strong>
+          ({{ dias_operativos }} jornadas operativas · comparado contra {{ periodo_anterior.0|date:"d/m" }}–{{ periodo_anterior.1|date:"d/m" }})
+        </p>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        {% if empresas_disponibles.count > 1 and not user.empresa_asociada %}
+          <form method="get" action="{% url 'turnos:gerencia_empresa' %}" class="proto-only-inline d-flex align-items-center gap-2 py-1 px-2">
+            <span class="badge bg-danger" style="font-size: 0.62rem;">SOLO DEMO</span>
+            <input type="hidden" name="periodo" value="{{ periodo_actual }}">
+            <select name="empresa" class="form-select form-select-sm py-1" style="font-size: 0.8rem;" onchange="this.form.submit()">
+              {% for emp in empresas_disponibles %}
+                <option value="{{ emp.id }}" {% if empresa_actual.id == emp.id %}selected{% endif %}>{{ emp.nombre }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        {% endif %}
+
+        <!-- Selector de Horizonte Temporal -->
+        <div class="dss-period-pills" role="navigation" aria-label="Horizonte de análisis">
+          {% for p in periodos_disponibles %}
+            <a
+              href="?periodo={{ p }}&amp;empresa={{ empresa_actual.id }}"
+              class="dss-period-link {% if periodo_actual == p %}active{% endif %}">
+              {{ p }} días
+            </a>
+          {% endfor %}
+        </div>
+
+        <a href="{% url 'turnos:panel_empresa' %}?empresa={{ empresa_actual.id }}" class="btn btn-sm btn-accent-soltat">
+          <i class="bi bi-layout-wtf me-1"></i> Ir a Operación de Hoy
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. TARJETAS KPI EJECUTIVAS (LO QUE SE GANÓ, LO QUE SE PERDIÓ Y QUÉ TAN RÁPIDO SE OPERÓ) -->
+  <div class="row g-3 mb-4">
+    {% for kpi in kpis %}
+      <div class="col-sm-6 col-xl-3">
+        <div class="kpi-exec-card">
+          <div>
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+              <span class="kpi-exec-label">{{ kpi.etiqueta }}</span>
+              <span class="kpi-exec-icon">
+                <i class="bi {{ kpi.icono }}"></i>
+              </span>
+            </div>
+
+            <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 my-1">
+              <div class="kpi-exec-value tabular-nums">
+                {{ kpi.valor_fmt }}{% if kpi.unidad %}<span class="kpi-exec-unit">{{ kpi.unidad }}</span>{% endif %}
+              </div>
+
+              {% if kpi.variacion_fmt %}
+                <span class="kpi-delta-pill tono-{{ kpi.tono }}" title="Variación frente al período anterior equivalente">
+                  {% if kpi.variacion > 0 %}▲{% elif kpi.variacion < 0 %}▼{% endif %}
+                  {{ kpi.variacion_fmt }}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="text-muted mt-2 pt-2 border-top" style="font-size: 0.76rem; border-color: #F0EDE4 !important;">
+            {{ kpi.ayuda }}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <!-- 3. MOTOR DE RECOMENDACIONES GERENCIALES AUTOMÁTICAS (TOMA DE DECISIONES) -->
+  <div class="card-soltat p-4 mb-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2">
+      <div>
+        <span class="section-eyebrow">Diagnóstico Automatizado de Planta</span>
+        <h2 class="h5 mb-0">Recomendaciones para la Toma de Decisiones</h2>
+      </div>
+      <span class="badge-soltat badge-confirmado">
+        <i class="bi bi-cpu"></i> {{ recomendaciones|length }} hallazgo{% if recomendaciones|length != 1 %}s{% endif %} detectado{% if recomendaciones|length != 1 %}s{% endif %}
+      </span>
+    </div>
+
+    <div class="row g-3">
+      {% for rec in recomendaciones %}
+        <div class="col-md-6 col-xl-4">
+          <div class="decision-card nivel-{{ rec.nivel }} h-100 d-flex flex-column justify-content-between">
+            <div>
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="bi {{ rec.icono }} fs-5" style="color: var(--color-primary);"></i>
+                <h3 class="h6 mb-0">{{ rec.titulo }}</h3>
+              </div>
+              <p class="small text-muted mb-2">{{ rec.texto }}</p>
+            </div>
+            <div class="decision-action-chip">
+              <i class="bi bi-arrow-return-right me-1" style="color: var(--color-secondary);"></i>
+              <strong>Acción sugerida:</strong> {{ rec.accion }}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 4. CUATRO GRÁFICAS EJECUTIVAS DE DESEMPEÑO, CAPACIDAD, VELOCIDAD Y CALIDAD -->
+  <div class="row g-4 mb-4">
+
+    <!-- Gráfica 1: Serie Diaria Reservado vs Recibido -->
+    <div class="col-xl-8">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Ritmo Diario de Acopio</span>
+            <h3 class="h6 mb-0">Kilos Reservados vs. Kilos Netos Recibidos en Báscula</h3>
+          </div>
+          <span class="badge badge-confirmado">Tope Diario: {{ empresa_actual.capacidad_diaria_kg|intcomma }} kg</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartDiariaEmpresa"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfica 2: Desglose de Capacidad (Ganado vs Perdido) -->
+    <div class="col-xl-4">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Aprovechamiento vs. Pérdida de Cupo</span>
+            <h3 class="h6 mb-0">Destino de la Capacidad Operativa</h3>
+          </div>
+          <span class="text-muted small tabular-nums">{{ uso.capacidad|intcomma }} kg tot.</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartUsoCapacidad"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfica 3: Velocidad por Banda Horaria (Espera en Playón vs Turnos) -->
+    <div class="col-xl-7">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Detección de Cuellos de Botella</span>
+            <h3 class="h6 mb-0">Tiempo Medio de Espera en Planta (min) y Volumen por Banda Horaria</h3>
+          </div>
+          <span class="badge badge-en-playa">Garita → Báscula</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartFranjasEmpresa"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfica 4: Distribución de Clases Comerciales y Valor -->
+    <div class="col-xl-5">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Calidad y Liquidación</span>
+            <h3 class="h6 mb-0">Volumen Acopiado por Clase Comercial (A, B, C, D)</h3>
+          </div>
+          <span class="badge badge-descargado">Precio prom: USD {{ metricas.precio_promedio|default:"0" }}/kg</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartClasesEmpresa"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 5. MATRIZ DE DESEMPEÑO Y CUMPLIMIENTO POR PRODUCTOR -->
+  <div class="board-container mb-4">
+    <div class="board-toolbar d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+      <div>
+        <span class="section-eyebrow">Auditoría de Remitentes</span>
+        <h2 class="h5 mb-0">Desempeño Logístico y Comercial por Productor</h2>
+      </div>
+      <span class="text-muted small">Ordenado por volumen neto entregado en báscula</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-soltat">
+        <thead>
+          <tr>
+            <th>Productor / Razón Social</th>
+            <th class="text-center">Entregas</th>
+            <th class="text-end">Kg Netos Recibidos</th>
+            <th class="text-end">Desvío Declaración</th>
+            <th class="text-end">Sobre-reserva (Cupo Perdido)</th>
+            <th class="text-center">Viaje Medio</th>
+            <th class="text-center">Espera en Planta</th>
+            <th class="text-center">Puntualidad</th>
+            <th class="text-end pe-4">Monto Liquidado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in ranking %}
+            <tr>
+              <td>
+                <div class="fw-bold text-dark">{{ r.nombre }}</div>
+                <span class="text-muted small tabular-nums">CUIT {{ r.cuit }}</span>
+              </td>
+              <td class="text-center tabular-nums">
+                <span class="fw-bold">{{ r.entregas }}</span>
+                {% if r.anulados %}
+                  <span class="text-danger small ms-1" title="Turnos anulados">({{ r.anulados }} anul.)</span>
+                {% endif %}
+              </td>
+              <td class="text-end fw-bold tabular-nums" style="color: var(--color-primary);">
+                {{ r.kg_recibidos|intcomma }} kg
+              </td>
+              <td class="text-end tabular-nums">
+                {% if r.desvio_estimacion_pct is not None %}
+                  <span class="kpi-delta-pill {% if r.desvio_estimacion_pct < -5 %}tono-negativo{% else %}tono-positivo{% endif %}">
+                    {% if r.desvio_estimacion_pct > 0 %}+{% endif %}{{ r.desvio_estimacion_pct }}%
+                  </span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-end tabular-nums text-muted">
+                {{ r.sobre_reserva_kg|intcomma }} kg
+              </td>
+              <td class="text-center tabular-nums">
+                {% if r.viaje_prom %}{{ r.viaje_prom|floatformat:0 }} min{% else %}—{% endif %}
+              </td>
+              <td class="text-center tabular-nums">
+                {% if r.espera_prom %}{{ r.espera_prom|floatformat:0 }} min{% else %}—{% endif %}
+              </td>
+              <td class="text-center tabular-nums">
+                {% if r.puntualidad_pct is not None %}{{ r.puntualidad_pct }}%{% else %}—{% endif %}
+              </td>
+              <td class="text-end pe-4 fw-bold tabular-nums" style="color: var(--color-secondary);">
+                USD {{ r.monto_usd|floatformat:0|intcomma }}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="9" class="text-center py-4 text-muted">Sin entregas registradas en el período seleccionado.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 6. BITÁCORA ANALÍTICA DE CADA MOVIMIENTO (TIEMPOS, RECORRIDO, GANANCIA Y MERMA) -->
+  <div class="board-container mb-4">
+    <div class="board-toolbar d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+      <div>
+        <span class="section-eyebrow">Trazabilidad Unidad por Unidad</span>
+        <h2 class="h5 mb-0">Detalle de Movimientos: Tiempos de Recorrido, Espera y Liquidación</h2>
+      </div>
+
+      <div class="op-search-wrapper">
+        <i class="bi bi-search"></i>
+        <input
+          type="search"
+          id="inputBuscarMovGerencia"
+          class="form-control op-search-input"
+          placeholder="Filtrar por código, patente, productor o clase...">
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-soltat" id="tablaMovimientosGerencia">
+        <thead>
+          <tr>
+            <th>Fecha / Banda</th>
+            <th>Orden / Dominio</th>
+            <th>Productor</th>
+            <th class="text-center">Viaje Finca→Garita</th>
+            <th class="text-center">Espera en Playón</th>
+            <th class="text-center">Recorrido Total</th>
+            <th class="text-end">Declarado vs. Real</th>
+            <th class="text-center">Clase</th>
+            <th class="text-end">Liquidado (Ganado)</th>
+            <th class="text-end pe-4">No Percibido (Merma/Cal.)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in movimientos %}
+            <tr
+              class="fila-mov-gerencia"
+              data-search="{{ m.codigo|lower }} {{ m.patente_vehiculo|lower }} {{ m.productor.razon_social|default:m.productor.username|lower }} {{ m.productor.cuit_dni|lower }} clase {{ m.clase_tabaco|default:''|lower }}">
+              <td class="tabular-nums">
+                <div class="fw-bold text-dark">{{ m.fecha_entrega|date:"d/m/Y" }}</div>
+                <span class="text-muted small">{{ m.franja_horaria }}</span>
+              </td>
+              <td>
+                <a href="{% url 'turnos:comprobante' m.codigo %}" class="font-monospace fw-bold text-decoration-none d-block" style="color: var(--color-primary);">
+                  {{ m.codigo }}
+                </a>
+                <span class="text-muted small font-monospace">{{ m.patente_vehiculo }}</span>
+              </td>
+              <td>
+                <div class="fw-medium text-dark">{{ m.productor.razon_social|default:m.productor.username }}</div>
+                <span class="text-muted small tabular-nums">CUIT {{ m.productor.cuit_dni }}</span>
+              </td>
+              <td class="text-center">
+                {% if m.minutos_viaje is not None %}
+                  <span class="route-metric-chip">
+                    <i class="bi bi-truck text-secondary"></i> {{ m.minutos_viaje|floatformat:0 }} min
+                  </span>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.minutos_espera is not None %}
+                  <span class="route-metric-chip" style="{% if m.minutos_espera > 60 %}border-color: var(--color-accent); background-color: var(--color-accent-soft);{% endif %}">
+                    <i class="bi bi-hourglass-split" style="color: #8C6512;"></i> {{ m.minutos_espera|floatformat:0 }} min
+                  </span>
+                {% elif m.estado == 'EN_PLAYA' %}
+                  <span class="badge-soltat badge-en-playa">En Playón</span>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.minutos_ciclo is not None %}
+                  <strong class="tabular-nums" style="color: var(--color-primary);">{{ m.minutos_ciclo|floatformat:0 }} min</strong>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-end tabular-nums">
+                {% if m.kilos_reales %}
+                  <div class="fw-bold text-dark">{{ m.kilos_reales|intcomma }} kg</div>
+                  <small class="{% if m.desvio_pct < -4 %}text-danger{% else %}text-muted{% endif %}">
+                    Est: {{ m.kilos_estimados|intcomma }} kg ({% if m.desvio_pct > 0 %}+{% endif %}{{ m.desvio_pct }}%)
+                  </small>
+                {% else %}
+                  <span class="text-muted">{{ m.kilos_estimados|intcomma }} kg (est.)</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.clase_tabaco %}
+                  <span class="clase-pill clase-{{ m.clase_tabaco }}" title="USD {{ m.precio_kg }}/kg">
+                    Clase {{ m.clase_tabaco }}
+                  </span>
+                {% elif m.estado == 'CANCELADO' %}
+                  <span class="badge-soltat badge-cancelado">Anulado</span>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-end tabular-nums">
+                {% if m.kilos_reales %}
+                  <strong style="color: var(--color-secondary);">USD {{ m.importe_usd|floatformat:0|intcomma }}</strong>
+                  <small class="d-block text-muted">a USD {{ m.precio_kg }}/kg</small>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-4 tabular-nums">
+                {% if m.kilos_reales %}
+                  {% if m.perdida_merma_usd > 0 or m.perdida_clase_usd > 0 %}
+                    <span class="text-danger fw-semibold" title="Merma: USD {{ m.perdida_merma_usd|intcomma }} · Diferencia vs Clase A: USD {{ m.perdida_clase_usd|intcomma }}">
+                      -USD {{ m.perdida_merma_usd|add:m.perdida_clase_usd|floatformat:0|intcomma }}
+                    </span>
+                    <small class="d-block text-muted">
+                      Merma: {{ m.perdida_merma_usd|floatformat:0 }} · Cal: {{ m.perdida_clase_usd|floatformat:0 }}
+                    </small>
+                  {% else %}
+                    <span class="text-success small fw-semibold">Óptimo (Clase A)</span>
+                  {% endif %}
+                {% elif m.estado == 'CANCELADO' %}
+                  <span class="text-danger small">{{ m.kilos_estimados|intcomma }} kg anulados</span>
+                {% else %}
+                  <span class="text-muted small">En curso</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{{ graficos|json_script:"datosGraficosEmpresa" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const rawEl = document.getElementById('datosGraficosEmpresa');
+    if (!rawEl || typeof Chart === 'undefined') return;
+    const g = JSON.parse(rawEl.textContent);
+
+    Chart.defaults.font.family = "'Roboto', sans-serif";
+    Chart.defaults.color = '#5C6B73';
+
+    // 1. Serie Diaria Reservado vs Recibido
+    const ctxDiaria = document.getElementById('chartDiariaEmpresa');
+    if (ctxDiaria && g.diaria) {
+      new Chart(ctxDiaria, {
+        type: 'bar',
+        data: {
+          labels: g.diaria.labels,
+          datasets: [
+            {
+              label: 'Kilos Netos Recibidos (Báscula)',
+              data: g.diaria.recibido,
+              backgroundColor: '#173F35',
+              borderRadius: 5,
+              order: 2
+            },
+            {
+              label: 'Kilos Reservados',
+              data: g.diaria.reservado,
+              backgroundColor: 'rgba(111, 152, 99, 0.38)',
+              borderColor: '#6F9863',
+              borderWidth: 1.5,
+              borderRadius: 5,
+              order: 3
+            },
+            {
+              label: 'Capacidad Tope Diaria',
+              data: g.diaria.labels.map(() => g.diaria.capacidad),
+              type: 'line',
+              borderColor: '#D6A84F',
+              borderDash: [6, 4],
+              borderWidth: 2,
+              pointRadius: 0,
+              fill: false,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('es-AR') + ' kg' } }
+          }
+        }
+      });
+    }
+
+    // 2. Dona de Aprovechamiento vs Pérdida de Capacidad
+    const ctxUso = document.getElementById('chartUsoCapacidad');
+    if (ctxUso && g.uso) {
+      new Chart(ctxUso, {
+        type: 'doughnut',
+        data: {
+          labels: g.uso.labels,
+          datasets: [{
+            data: g.uso.valores,
+            backgroundColor: ['#173F35', '#6F9863', '#D6A84F', '#B93829', '#DED9CC'],
+            borderWidth: 2,
+            borderColor: '#FFFFFF'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '62%',
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+          }
+        }
+      });
+    }
+
+    // 3. Velocidad por Banda Horaria (Espera en Playón vs Cantidad de Turnos)
+    const ctxFranjas = document.getElementById('chartFranjasEmpresa');
+    if (ctxFranjas && g.franjas) {
+      new Chart(ctxFranjas, {
+        type: 'bar',
+        data: {
+          labels: g.franjas.labels,
+          datasets: [
+            {
+              label: 'Espera Media en Planta (min)',
+              data: g.franjas.espera,
+              backgroundColor: g.franjas.espera.map(v => (v && v > 55) ? '#D6A84F' : '#173F35'),
+              borderRadius: 6,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Turnos en la Banda',
+              data: g.franjas.turnos,
+              type: 'line',
+              borderColor: '#6F9863',
+              backgroundColor: '#6F9863',
+              borderWidth: 2.5,
+              tension: 0.3,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Minutos de espera' } },
+            y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Turnos' } }
+          }
+        }
+      });
+    }
+
+    // 4. Calidad por Clase Comercial
+    const ctxClases = document.getElementById('chartClasesEmpresa');
+    if (ctxClases && g.clases) {
+      new Chart(ctxClases, {
+        type: 'bar',
+        data: {
+          labels: g.clases.labels,
+          datasets: [{
+            label: 'Kilos Netos por Clase',
+            data: g.clases.kg,
+            backgroundColor: ['#173F35', '#6F9863', '#D6A84F', '#B93829'],
+            borderRadius: 6
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('es-AR') + ' kg' } }
+          }
+        }
+      });
+    }
+
+    // Buscador instantáneo en la bitácora de movimientos
+    const inputMov = document.getElementById('inputBuscarMovGerencia');
+    const filasMov = document.querySelectorAll('.fila-mov-gerencia');
+    if (inputMov) {
+      inputMov.addEventListener('input', function() {
+        const q = this.value.trim().toLowerCase();
+        filasMov.forEach(f => {
+          const txt = f.getAttribute('data-search') || '';
+          f.classList.toggle('d-none', q && !txt.includes(q));
+        });
+      });
+    }
+  });
+</script>
+{% endblock %}
+

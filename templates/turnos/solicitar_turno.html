@@ -1,0 +1,492 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Reserva de Descarga · SOLTAT{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- Cabecera Operativa del Productor -->
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end mb-4 gap-3">
+    <div>
+      <span class="section-eyebrow">
+        <i class="bi bi-calendar2-range me-1"></i> Portal de Productores Tabacaleros
+      </span>
+      <h1 class="h2 mb-1">Solicitud de Ventana de Descarga</h1>
+      <p class="text-muted small mb-0">
+        Reserve su turno de ingreso a balanza verificando en tiempo real el margen operativo del centro de acopio.
+      </p>
+    </div>
+
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <a href="{% url 'turnos:gerencia_productor' %}" class="btn btn-secondary-soltat d-inline-flex align-items-center gap-2 py-2 px-3">
+        <i class="bi bi-graph-up-arrow"></i>
+        <span>Tablero de Rendimiento, Costos y Tiempos</span>
+      </a>
+      <div class="card-soltat px-3 py-2 d-inline-flex flex-row align-items-center gap-3">
+        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 36px; height: 36px; background-color: var(--color-primary-soft); color: var(--color-primary);">
+          <i class="bi bi-person-check-fill"></i>
+        </div>
+        <div>
+          <div class="fw-bold text-dark" style="font-size: 0.86rem;">
+            {{ user.razon_social|default:user.get_full_name|default:user.username }}
+          </div>
+          <div class="text-muted tabular-nums" style="font-size: 0.75rem;">
+            CUIT Productor: <strong>{{ user.cuit_dni }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLOQUE DE RECHAZO POR CUPO DIARIO SUPERADO (REGLA CENTRAL DE NEGOCIO) -->
+  {% if cupo_error %}
+    <div class="alert-soltat-cupo-excedido mb-4 shadow-sm" role="alert">
+      <div class="d-flex flex-column flex-md-row align-items-md-start gap-3">
+        <div class="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 46px; height: 46px; background-color: #FEE2E2; color: var(--color-danger);">
+          <i class="bi bi-slash-octagon-fill fs-4"></i>
+        </div>
+        <div class="flex-grow-1">
+          <span class="text-uppercase fw-bold" style="font-size: 0.7rem; letter-spacing: 0.08em; color: var(--color-danger);">
+            Reserva Rechazada por Límite Operativo
+          </span>
+          <h3 class="h5 mb-1">La carga declarada supera el cupo remanente del día</h3>
+          <p class="mb-3 small text-muted">{{ cupo_error.mensaje }}</p>
+
+          <div class="row g-2">
+            <div class="col-sm-4">
+              <div class="bg-white p-2 px-3 rounded-3 border">
+                <span class="text-muted d-block" style="font-size: 0.74rem;">Carga Solicitada</span>
+                <strong class="tabular-nums text-danger fs-6">{{ cupo_error.solicitados|intcomma }} kg</strong>
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <div class="bg-white p-2 px-3 rounded-3 border" style="border-color: var(--color-accent) !important;">
+                <span class="text-muted d-block" style="font-size: 0.74rem;">Máximo Disponible Hoy</span>
+                <strong class="tabular-nums fs-6" style="color: #8C6512;">{{ cupo_error.remanente|intcomma }} kg</strong>
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <div class="bg-white p-2 px-3 rounded-3 border">
+                <span class="text-muted d-block" style="font-size: 0.74rem;">Tope Diario de Planta</span>
+                <strong class="tabular-nums fs-6" style="color: var(--color-primary);">{{ cupo_error.capacidad|intcomma }} kg</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="row g-4">
+
+    <!-- COLUMNA IZQUIERDA: FORMULARIO ESTRUCTURADO DE RESERVA -->
+    <div class="col-lg-7">
+      <div class="card-soltat-elevated p-4 p-md-4">
+
+        <form method="post" action="{% url 'turnos:solicitar_turno' %}" id="formSolicitudTurno" novalidate>
+          {% csrf_token %}
+
+          <!-- SECCIÓN 01: PLANTA Y VENTANA HORARIA -->
+          <div class="pb-3 mb-4 border-bottom" style="border-color: var(--color-border) !important;">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <span class="badge rounded-2 px-2 py-1" style="background-color: var(--color-primary); color: var(--color-accent); font-family: 'Montserrat', sans-serif;">01</span>
+              <h2 class="h5 mb-0">Destino y Ventana de Arribo</h2>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label for="{{ form.empresa.id_for_label }}" class="form-label">
+                  Planta / Empresa Compradora <span class="text-danger">*</span>
+                </label>
+                {{ form.empresa }}
+                {% if form.empresa.errors %}
+                  <div class="text-danger small mt-1">{{ form.empresa.errors.0 }}</div>
+                {% endif %}
+              </div>
+
+              <div class="col-md-4">
+                <label for="{{ form.fecha_entrega.id_for_label }}" class="form-label">
+                  Fecha de Entrega <span class="text-danger">*</span>
+                </label>
+                {{ form.fecha_entrega }}
+                {% if form.fecha_entrega.errors %}
+                  <div class="text-danger small mt-1">{{ form.fecha_entrega.errors.0 }}</div>
+                {% endif %}
+              </div>
+
+              <!-- Selector Táctil de Bandas de 2 Horas -->
+              <div class="col-12 mt-3">
+                <label for="{{ form.franja_horaria.id_for_label }}" class="form-label d-flex justify-content-between">
+                  <span>Banda Horaria de Ingreso a Garita (2 hs) <span class="text-danger">*</span></span>
+                  <span class="text-muted small fw-normal">Seleccione un bloque horario</span>
+                </label>
+
+                <!-- Select nativo oculto sincronizado para validación limpia de Django -->
+                <div class="d-none">
+                  {{ form.franja_horaria }}
+                </div>
+
+                <div class="slot-grid" id="slotVisualGrid">
+                  <button type="button" class="slot-option-btn" data-slot="08:00 - 10:00">
+                    <span class="slot-time tabular-nums">08:00 – 10:00</span>
+                    <span class="slot-label">1° Turno Mañana</span>
+                  </button>
+                  <button type="button" class="slot-option-btn" data-slot="10:00 - 12:00">
+                    <span class="slot-time tabular-nums">10:00 – 12:00</span>
+                    <span class="slot-label">2° Turno Mañana</span>
+                  </button>
+                  <button type="button" class="slot-option-btn" data-slot="12:00 - 14:00">
+                    <span class="slot-time tabular-nums">12:00 – 14:00</span>
+                    <span class="slot-label">Turno Mediodía</span>
+                  </button>
+                  <button type="button" class="slot-option-btn" data-slot="14:00 - 16:00">
+                    <span class="slot-time tabular-nums">14:00 – 16:00</span>
+                    <span class="slot-label">1° Turno Tarde</span>
+                  </button>
+                  <button type="button" class="slot-option-btn" data-slot="16:00 - 18:00">
+                    <span class="slot-time tabular-nums">16:00 – 18:00</span>
+                    <span class="slot-label">Cierre de Playa</span>
+                  </button>
+                </div>
+                {% if form.franja_horaria.errors %}
+                  <div class="text-danger small mt-1">{{ form.franja_horaria.errors.0 }}</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- SECCIÓN 02: VOLUMEN Y TRANSPORTE -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <span class="badge rounded-2 px-2 py-1" style="background-color: var(--color-primary); color: var(--color-accent); font-family: 'Montserrat', sans-serif;">02</span>
+              <h2 class="h5 mb-0">Declaración de Carga y Unidad</h2>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="{{ form.kilos_estimados.id_for_label }}" class="form-label">
+                  Volumen Estimado a Entregar (kg) <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  {{ form.kilos_estimados }}
+                  <span class="input-group-text fw-bold" style="background-color: var(--color-surface-muted); border-color: var(--color-border); color: var(--color-primary);">
+                    KG
+                  </span>
+                </div>
+                {% if form.kilos_estimados.errors %}
+                  <div class="text-danger small mt-1">{{ form.kilos_estimados.errors.0 }}</div>
+                {% endif %}
+              </div>
+
+              <div class="col-md-6">
+                <label for="{{ form.patente_vehiculo.id_for_label }}" class="form-label">
+                  Dominio Chasis / Camioneta <span class="text-danger">*</span>
+                </label>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="flex-grow-1">
+                    {{ form.patente_vehiculo }}
+                  </div>
+                  <div class="chapa-patente d-none d-sm-inline-flex flex-shrink-0" aria-hidden="true">
+                    <span class="chapa-top">ARGENTINA</span>
+                    <span class="chapa-num" id="previewPatenteText">---</span>
+                  </div>
+                </div>
+                {% if form.patente_vehiculo.errors %}
+                  <div class="text-danger small mt-1">{{ form.patente_vehiculo.errors.0 }}</div>
+                {% endif %}
+              </div>
+
+              <div class="col-12">
+                <label for="{{ form.observaciones.id_for_label }}" class="form-label">
+                  Detalle de Tabaco / Acondicionamiento <span class="text-muted fw-normal">(Opcional)</span>
+                </label>
+                {{ form.observaciones }}
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary-soltat w-100 py-3 fs-6 d-flex align-items-center justify-content-center gap-2" id="btnConfirmarTurno">
+            <i class="bi bi-qr-code-scan"></i>
+            <span>Validar Cupo y Emitir Orden de Ingreso</span>
+          </button>
+
+        </form>
+      </div>
+    </div>
+
+    <!-- COLUMNA DERECHA: TELEMETRÍA DE PLANTA EN VIVO + HISTORIAL + SIMULADOR QA -->
+    <div class="col-lg-5">
+
+      <!-- 1. Telemetría en Tiempo Real de la Planta Seleccionada -->
+      <div class="telemetry-panel mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="section-eyebrow mb-0">Consulta en Tiempo Real</span>
+          <span class="badge-soltat badge-confirmado" id="liveBadgeStatus">Seleccione planta</span>
+        </div>
+
+        <div class="my-2">
+          <span class="text-muted small d-block">Cupo Remanente Disponible en Planta</span>
+          <span class="display-6 fw-bold tabular-nums" id="liveKilosDisponibles" style="font-family: 'Montserrat', sans-serif; color: var(--color-primary);">
+            — kg
+          </span>
+        </div>
+
+        <div class="cupo-gauge-track my-3">
+          <div class="cupo-threshold-marker" title="Alerta 80%"></div>
+          <div id="liveProgressBar" class="cupo-gauge-fill nivel-normal" style="width: 0%;"></div>
+        </div>
+
+        <div class="row g-2 small pt-1">
+          <div class="col-6">
+            <div class="p-2 rounded-3" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
+              <span class="text-muted d-block" style="font-size: 0.72rem;">Ya Comprometido</span>
+              <strong class="tabular-nums text-dark" id="liveKilosOcupados">— kg</strong>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 rounded-3" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
+              <span class="text-muted d-block" style="font-size: 0.72rem;">Capacidad Tope</span>
+              <strong class="tabular-nums text-dark" id="liveCapacidadMax">250.000 kg</strong>
+            </div>
+          </div>
+        </div>
+
+        <div id="liveAlertBlock" class="alert alert-soltat-alerta mt-3 mb-0 py-2 px-3 small d-none">
+          <span id="liveAlertText"></span>
+        </div>
+      </div>
+
+      <!-- 2. Pases Emitidos al Productor -->
+      <div class="card-soltat p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 px-1">
+          <h3 class="h6 mb-0">Órdenes de Ingreso Emitidas</h3>
+          <span class="text-muted small">Últimas reservas</span>
+        </div>
+
+        {% if turnos_recientes %}
+          <div class="d-flex flex-column gap-2">
+            {% for t in turnos_recientes %}
+              <div class="p-2 px-3 rounded-3 border" style="background-color: var(--color-surface-warm); border-color: var(--color-border) !important;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none" style="color: var(--color-primary); font-size: 0.86rem;">
+                    {{ t.codigo }} <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
+                  </a>
+                  <span class="badge-soltat {{ t.badge_class }}" style="font-size: 0.68rem; padding: 0.2rem 0.55rem;">
+                    {{ t.get_estado_display }}
+                  </span>
+                </div>
+                <div class="small text-dark fw-medium text-truncate">{{ t.empresa.nombre }}</div>
+                <div class="d-flex justify-content-between align-items-center text-muted mt-1" style="font-size: 0.76rem;">
+                  <span class="tabular-nums"><i class="bi bi-calendar3 me-1"></i>{{ t.fecha_entrega|date:"d/m/Y" }} · {{ t.franja_horaria }}</span>
+                  <strong class="tabular-nums text-dark">{{ t.kilos_efectivos|intcomma }} kg</strong>
+                </div>
+
+                <!-- Trazabilidad de Ruta / Liquidación / Despacho de Finca -->
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-1 mt-2 pt-2 border-top" style="border-color: var(--color-border) !important;">
+                  <div class="d-flex flex-wrap gap-1">
+                    {% if t.minutos_viaje is not None %}
+                      <span class="route-metric-chip"><i class="bi bi-signpost-split"></i> {{ t.minutos_viaje }}m ruta</span>
+                    {% elif t.hora_salida_origen %}
+                      <span class="route-metric-chip fast"><i class="bi bi-truck"></i> En ruta ({{ t.hora_salida_origen|date:"H:i" }})</span>
+                    {% endif %}
+                    {% if t.minutos_espera is not None %}
+                      <span class="route-metric-chip {% if t.minutos_espera <= 45 %}fast{% else %}slow{% endif %}">
+                        <i class="bi bi-hourglass-split"></i> {{ t.minutos_espera }}m planta
+                      </span>
+                    {% endif %}
+                    {% if t.importe_usd %}
+                      <span class="route-metric-chip fast">
+                        USD {{ t.importe_usd|floatformat:0|intcomma }}
+                      </span>
+                    {% endif %}
+                  </div>
+
+                  {% if t.estado == 'CONFIRMADO' and not t.hora_salida_origen %}
+                    <form method="post" action="{% url 'turnos:informar_salida' t.id %}" class="m-0">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm btn-outline-soltat py-0 px-2" style="font-size: 0.72rem;" title="Registrar hora de salida del camión desde finca para medir tiempo de ruta">
+                        <i class="bi bi-send-check me-1"></i> Informar Salida Finca
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="text-center py-4 text-muted small">
+            Aún no registra órdenes de ingreso emitidas en esta campaña.
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- =================================================================
+           APARTADO TEMPORAL MARCADO EN ROJO (ATAJO DE PRUEBAS PARA REUNIÓN)
+           ================================================================= -->
+      <div class="proto-only-box">
+        <span class="proto-only-tag">
+          <i class="bi bi-cone-striped"></i>
+          Temporal · Simulador QA (No estará en el producto final)
+        </span>
+        <p class="proto-only-note">
+          Botones rápidos para probar frente al equipo ambos escenarios de validación de cupo en Cooperativa Jujuy:
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm bg-white border text-dark fw-medium" style="font-size: 0.76rem;" onclick="fillDemoScenario(15000, 'AG452KL', 'Virginia Fardos Clase B')">
+            <i class="bi bi-check2-circle text-success me-1"></i> Probar Carga Válida (15.000 kg)
+          </button>
+          <button type="button" class="btn btn-sm bg-white border text-danger fw-medium" style="font-size: 0.76rem;" onclick="fillDemoScenario(95000, 'AE998ZZ', 'Lote Excedente Prueba Cupo')">
+            <i class="bi bi-exclamation-triangle text-danger me-1"></i> Probar Rebote de Cupo (95.000 kg)
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const selectEmpresa = document.getElementById('id_empresa');
+    const inputFecha = document.getElementById('id_fecha_entrega');
+    const inputKilos = document.getElementById('id_kilos_estimados');
+    const inputPatente = document.getElementById('id_patente_vehiculo');
+    const selectFranja = document.getElementById('id_franja_horaria');
+    const previewPatente = document.getElementById('previewPatenteText');
+
+    const slotButtons = document.querySelectorAll('.slot-option-btn');
+    const liveProgressBar = document.getElementById('liveProgressBar');
+    const liveKilosOcupados = document.getElementById('liveKilosOcupados');
+    const liveKilosDisponibles = document.getElementById('liveKilosDisponibles');
+    const liveCapacidadMax = document.getElementById('liveCapacidadMax');
+    const liveBadgeStatus = document.getElementById('liveBadgeStatus');
+    const liveAlertBlock = document.getElementById('liveAlertBlock');
+    const liveAlertText = document.getElementById('liveAlertText');
+
+    // 1. Sincronizar botones visuales de franja horaria con el select de Django
+    function syncSlotsFromSelect() {
+      if (!selectFranja) return;
+      if (!selectFranja.value && selectFranja.options.length > 0) {
+        for (let opt of selectFranja.options) {
+          if (opt.value) { selectFranja.value = opt.value; break; }
+        }
+      }
+      slotButtons.forEach(btn => {
+        btn.classList.toggle('selected', btn.getAttribute('data-slot') === selectFranja.value);
+      });
+    }
+
+    slotButtons.forEach(btn => {
+      btn.addEventListener('click', function() {
+        const val = this.getAttribute('data-slot');
+        if (selectFranja) {
+          selectFranja.value = val;
+          syncSlotsFromSelect();
+        }
+      });
+    });
+    syncSlotsFromSelect();
+
+    // 2. Vista previa de chapa patente en vivo
+    function syncPatente() {
+      if (!inputPatente || !previewPatente) return;
+      const val = inputPatente.value.trim().toUpperCase();
+      previewPatente.textContent = val || '---';
+    }
+    if (inputPatente) {
+      inputPatente.addEventListener('input', syncPatente);
+      syncPatente();
+    }
+
+    // 3. Consulta de disponibilidad en vivo
+    function fmt(num) {
+      return new Intl.NumberFormat('es-AR').format(num);
+    }
+
+    window.actualizarCupoEnVivo = function() {
+      const empresaId = selectEmpresa ? selectEmpresa.value : '';
+      const fecha = inputFecha ? inputFecha.value : '';
+
+      if (!empresaId || !fecha) {
+        liveBadgeStatus.textContent = 'Seleccione planta';
+        return;
+      }
+
+      fetch(`/api/cupo-disponible/?empresa_id=${empresaId}&fecha=${fecha}`)
+        .then(r => {
+          if (!r.ok) throw new Error('Error de red');
+          return r.json();
+        })
+        .then(data => {
+          const pct = data.porcentaje_ocupacion;
+          liveProgressBar.style.width = `${pct}%`;
+          liveProgressBar.className = `cupo-gauge-fill nivel-${data.nivel_semaforo}`;
+
+          if (data.nivel_semaforo === 'completo') {
+            liveBadgeStatus.className = 'badge-soltat badge-cancelado';
+            liveBadgeStatus.textContent = 'Cupo Cerrado (100%)';
+          } else if (data.nivel_semaforo === 'alerta') {
+            liveBadgeStatus.className = 'badge-soltat badge-en-playa';
+            liveBadgeStatus.textContent = `Últimos Cupos (${pct}%)`;
+          } else {
+            liveBadgeStatus.className = 'badge-soltat badge-descargado';
+            liveBadgeStatus.textContent = `Recepción Abierta (${pct}%)`;
+          }
+
+          liveKilosOcupados.textContent = `${fmt(data.kilos_ocupados)} kg`;
+          liveKilosDisponibles.textContent = `${fmt(data.kilos_disponibles)} kg`;
+          liveCapacidadMax.textContent = `${fmt(data.capacidad_maxima)} kg`;
+
+          const kilosIngresados = parseInt(inputKilos ? inputKilos.value : 0) || 0;
+          if (kilosIngresados > data.kilos_disponibles) {
+            liveAlertBlock.className = 'alert alert-danger mt-3 mb-0 py-2 px-3 small';
+            liveAlertText.innerHTML = `<i class="bi bi-x-octagon-fill me-1"></i> Los <strong>${fmt(kilosIngresados)} kg</strong> ingresados superan el margen libre de hoy (<strong>${fmt(data.kilos_disponibles)} kg</strong>).`;
+          } else if (kilosIngresados > 0) {
+            const restan = data.kilos_disponibles - kilosIngresados;
+            liveAlertBlock.className = 'alert alert-soltat-alerta mt-3 mb-0 py-2 px-3 small';
+            liveAlertText.innerHTML = `<i class="bi bi-check2-circle me-1"></i> Carga dentro del cupo. Tras su reserva quedarán <strong>${fmt(restan)} kg</strong> libres en planta.`;
+          } else {
+            liveAlertBlock.classList.add('d-none');
+          }
+        })
+        .catch(() => {});
+    };
+
+    if (selectEmpresa) {
+      // Seleccionar primera empresa activa automáticamente si está vacío para mostrar telemetría inmediata
+      if (!selectEmpresa.value && selectEmpresa.options.length > 1) {
+        selectEmpresa.selectedIndex = 1;
+      }
+      selectEmpresa.addEventListener('change', window.actualizarCupoEnVivo);
+    }
+    if (inputFecha) inputFecha.addEventListener('change', window.actualizarCupoEnVivo);
+    if (inputKilos) inputKilos.addEventListener('input', window.actualizarCupoEnVivo);
+
+    window.actualizarCupoEnVivo();
+  });
+
+  // Función del simulador QA (recuadro rojo)
+  function fillDemoScenario(kilos, patente, obs) {
+    const selectEmpresa = document.getElementById('id_empresa');
+    const inputKilos = document.getElementById('id_kilos_estimados');
+    const inputPatente = document.getElementById('id_patente_vehiculo');
+    const inputObs = document.querySelector('[name="observaciones"]');
+
+    if (selectEmpresa && selectEmpresa.options.length > 1 && !selectEmpresa.value) {
+      selectEmpresa.selectedIndex = 1;
+    }
+    if (inputKilos) inputKilos.value = kilos;
+    if (inputPatente) {
+      inputPatente.value = patente;
+      inputPatente.dispatchEvent(new Event('input'));
+    }
+    if (inputObs) inputObs.value = obs;
+    if (window.actualizarCupoEnVivo) window.actualizarCupoEnVivo();
+  }
+</script>
+{% endblock %}

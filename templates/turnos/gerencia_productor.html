@@ -1,0 +1,503 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Rendimiento, Costos y Tiempos · SOLTAT{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4">
+
+  <!-- 1. BANNER EJECUTIVO DE APOYO A LA DECISIÓN (PRODUCTOR / GERENCIA DE FINCA) -->
+  <div class="dss-hero-banner mb-4">
+    <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 position-relative" style="z-index: 1;">
+      <div>
+        <span class="badge mb-2 px-3 py-1" style="background: rgba(214,168,79,0.2); color: var(--color-accent); border: 1px solid rgba(214,168,79,0.45); font-family: 'Montserrat', sans-serif; font-size: 0.7rem; letter-spacing: 0.08em;">
+          SISTEMA DE APOYO A LA DECISIÓN · GERENCIA AGROPECUARIA DEL PRODUCTOR
+        </span>
+        <h1 class="h2 text-white mb-1">
+          {{ user.razon_social|default:user.get_full_name|default:user.username }}
+        </h1>
+        <p class="text-white-50 small mb-0">
+          CUIT <strong class="text-white tabular-nums">{{ user.cuit_dni }}</strong> · Período analizado:
+          <strong class="text-white">{{ desde|date:"d/m/Y" }}</strong> al <strong class="text-white">{{ hasta|date:"d/m/Y" }}</strong>
+        </p>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <div class="dss-period-pills" role="navigation" aria-label="Horizonte de análisis">
+          {% for p in periodos_disponibles %}
+            <a
+              href="?periodo={{ p }}"
+              class="dss-period-link {% if periodo_actual == p %}active{% endif %}">
+              {{ p }} días
+            </a>
+          {% endfor %}
+        </div>
+
+        <a href="{% url 'turnos:solicitar_turno' %}" class="btn btn-sm btn-accent-soltat">
+          <i class="bi bi-calendar2-plus me-1"></i> Nueva Reserva de Descarga
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. TARJETAS KPI (LO QUE SE GANÓ, LO QUE SE DEJÓ DE PERCIBIR Y CUÁNTO TARDÓ EL RECORRIDO) -->
+  <div class="row g-3 mb-4">
+    {% for kpi in kpis %}
+      <div class="col-sm-6 col-xl-3">
+        <div class="kpi-exec-card">
+          <div>
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+              <span class="kpi-exec-label">{{ kpi.etiqueta }}</span>
+              <span class="kpi-exec-icon">
+                <i class="bi {{ kpi.icono }}"></i>
+              </span>
+            </div>
+
+            <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 my-1">
+              <div class="kpi-exec-value tabular-nums">
+                {{ kpi.valor_fmt }}{% if kpi.unidad %}<span class="kpi-exec-unit">{{ kpi.unidad }}</span>{% endif %}
+              </div>
+
+              {% if kpi.variacion_fmt %}
+                <span class="kpi-delta-pill tono-{{ kpi.tono }}" title="Variación frente al período anterior">
+                  {% if kpi.variacion > 0 %}▲{% elif kpi.variacion < 0 %}▼{% endif %}
+                  {{ kpi.variacion_fmt }}
+                </span>
+              {% endif %}
+            </div>
+
+            {% if kpi.comparativo %}
+              <div class="mt-1">
+                <span class="badge {% if kpi.comparativo.mejor %}badge-descargado{% else %}badge-en-playa{% endif %}" style="font-size: 0.68rem;">
+                  {{ kpi.comparativo.texto }}
+                </span>
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="text-muted mt-2 pt-2 border-top" style="font-size: 0.76rem; border-color: #F0EDE4 !important;">
+            {{ kpi.ayuda }}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <!-- 3. RECOMENDACIONES AUTOMÁTICAS PARA DECISIONES DE FINCA Y LOGÍSTICA -->
+  <div class="card-soltat p-4 mb-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2">
+      <div>
+        <span class="section-eyebrow">Optimización Económica y de Tiempos de Flete</span>
+        <h2 class="h5 mb-0">Sugerencias para sus Próximos Envíos</h2>
+      </div>
+      <span class="badge-soltat badge-confirmado">
+        <i class="bi bi-lightbulb"></i> Basado en sus entregas vs. promedio de planta
+      </span>
+    </div>
+
+    <div class="row g-3">
+      {% for rec in recomendaciones %}
+        <div class="col-md-6 col-xl-4">
+          <div class="decision-card nivel-{{ rec.nivel }} h-100 d-flex flex-column justify-content-between">
+            <div>
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="bi {{ rec.icono }} fs-5" style="color: var(--color-primary);"></i>
+                <h3 class="h6 mb-0">{{ rec.titulo }}</h3>
+              </div>
+              <p class="small text-muted mb-2">{{ rec.texto }}</p>
+            </div>
+            <div class="decision-action-chip">
+              <i class="bi bi-arrow-return-right me-1" style="color: var(--color-secondary);"></i>
+              <strong>Decisión recomendada:</strong> {{ rec.accion }}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 4. CUATRO GRÁFICAS INTERACTIVAS DEL PRODUCTOR -->
+  <div class="row g-4 mb-4">
+
+    <!-- Gráfica 1: Ingresos Liquidados (USD) y Precio/kg por Entrega -->
+    <div class="col-xl-6">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Resultado Económico por Movimiento</span>
+            <h3 class="h6 mb-0">Liquidación Obtenida (USD) y Precio por Kilo en cada Entrega</h3>
+          </div>
+          <span class="badge badge-descargado">USD / Entrega</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartIngresosProductor"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfica 2: Desglose del Recorrido Total (Viaje en Ruta vs Espera en Playón) -->
+    <div class="col-xl-6">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Duración del Recorrido Puerta a Puerta</span>
+            <h3 class="h6 mb-0">Minutos de Viaje (Finca→Garita) + Espera en Planta (Garita→Báscula)</h3>
+          </div>
+          <span class="badge badge-en-playa">Minutos por viaje</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartTiemposProductor"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfica 3: ¿En qué horario conviene reservar? (Mi Espera vs Promedio de Planta) -->
+    <div class="col-xl-6">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Elección Inteligente de Turno</span>
+            <h3 class="h6 mb-0">Espera Media por Banda Horaria: Mi Finca vs. Promedio General de Planta</h3>
+          </div>
+          <span class="badge badge-confirmado">Comparativa 2 hs</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartFranjasProductor"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfica 4: Kilos Declarados vs Kilos Netos Pesados en Báscula -->
+    <div class="col-xl-6">
+      <div class="chart-box">
+        <div class="chart-box-header">
+          <div>
+            <span class="section-eyebrow">Control de Merma y Báscula</span>
+            <h3 class="h6 mb-0">Kilos Estimados al Reservar vs. Kilos Netos Liquidados</h3>
+          </div>
+          <span class="text-muted small">Desvío prom: {{ metricas.desvio_estimacion_pct|default:"0" }}%</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartKilosProductor"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 5. COMPARATIVA DE RESULTADOS POR PLANTA COMPRADORA -->
+  {% if plantas %}
+    <div class="board-container mb-4">
+      <div class="board-toolbar d-flex justify-content-between align-items-center">
+        <div>
+          <span class="section-eyebrow">Comparativa de Destinos</span>
+          <h2 class="h5 mb-0">Rendimiento Económico y Velocidad de Atención por Planta Compradora</h2>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-soltat">
+          <thead>
+            <tr>
+              <th>Planta de Acopio</th>
+              <th class="text-center">Entregas</th>
+              <th class="text-end">Kilos Netos</th>
+              <th class="text-end">Precio Promedio</th>
+              <th class="text-center">Viaje Medio</th>
+              <th class="text-center">Espera en Playón</th>
+              <th class="text-center">Recorrido Total</th>
+              <th class="text-end pe-4">Total Liquidado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in plantas %}
+              <tr>
+                <td class="fw-bold text-dark">{{ p.nombre }}</td>
+                <td class="text-center tabular-nums fw-bold">{{ p.entregas }}</td>
+                <td class="text-end tabular-nums fw-bold" style="color: var(--color-primary);">{{ p.kg_recibidos|intcomma }} kg</td>
+                <td class="text-end tabular-nums">USD {{ p.precio_promedio|default:"0"|floatformat:2 }}/kg</td>
+                <td class="text-center tabular-nums">{% if p.viaje_prom %}{{ p.viaje_prom|floatformat:0 }} min{% else %}—{% endif %}</td>
+                <td class="text-center tabular-nums">{% if p.espera_prom %}{{ p.espera_prom|floatformat:0 }} min{% else %}—{% endif %}</td>
+                <td class="text-center tabular-nums fw-bold">{% if p.ciclo_prom %}{{ p.ciclo_prom|floatformat:0 }} min{% else %}—{% endif %}</td>
+                <td class="text-end pe-4 tabular-nums fw-bold" style="color: var(--color-secondary);">USD {{ p.monto_usd|floatformat:0|intcomma }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- 6. HISTORIAL DETALLADO DE CADA MOVIMIENTO DEL PRODUCTOR -->
+  <div class="board-container mb-4">
+    <div class="board-toolbar d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+      <div>
+        <span class="section-eyebrow">Auditoría de Envíos</span>
+        <h2 class="h5 mb-0">Detalle de Cada Movimiento: Recorrido, Espera, Ganancia y Merma</h2>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-soltat">
+        <thead>
+          <tr>
+            <th>Fecha / Banda</th>
+            <th>Orden / Dominio</th>
+            <th>Planta Compradora</th>
+            <th class="text-center">Viaje Finca→Garita</th>
+            <th class="text-center">Espera Playón</th>
+            <th class="text-center">Recorrido Total</th>
+            <th class="text-end">Declarado vs. Real</th>
+            <th class="text-center">Clase</th>
+            <th class="text-end">Ganado (Liquidado)</th>
+            <th class="text-end pe-4">No Percibido (Merma/Cal.)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in movimientos %}
+            <tr>
+              <td class="tabular-nums">
+                <div class="fw-bold text-dark">{{ m.fecha_entrega|date:"d/m/Y" }}</div>
+                <span class="text-muted small">{{ m.franja_horaria }}</span>
+              </td>
+              <td>
+                <a href="{% url 'turnos:comprobante' m.codigo %}" class="font-monospace fw-bold text-decoration-none d-block" style="color: var(--color-primary);">
+                  {{ m.codigo }}
+                </a>
+                <span class="text-muted small font-monospace">{{ m.patente_vehiculo }}</span>
+              </td>
+              <td>
+                <div class="fw-medium text-dark">{{ m.empresa.nombre }}</div>
+                {% if m.observaciones %}
+                  <span class="text-muted small">{{ m.observaciones|truncatechars:36 }}</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.minutos_viaje is not None %}
+                  <span class="route-metric-chip">
+                    <i class="bi bi-truck text-secondary"></i> {{ m.minutos_viaje|floatformat:0 }} min
+                  </span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.minutos_espera is not None %}
+                  <span class="route-metric-chip">
+                    <i class="bi bi-hourglass-split" style="color: #8C6512;"></i> {{ m.minutos_espera|floatformat:0 }} min
+                  </span>
+                {% elif m.estado == 'EN_PLAYA' %}
+                  <span class="badge-soltat badge-en-playa">En Playón</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.minutos_ciclo is not None %}
+                  <strong class="tabular-nums" style="color: var(--color-primary);">{{ m.minutos_ciclo|floatformat:0 }} min</strong>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-end tabular-nums">
+                {% if m.kilos_reales %}
+                  <div class="fw-bold text-dark">{{ m.kilos_reales|intcomma }} kg</div>
+                  <small class="text-muted">Est: {{ m.kilos_estimados|intcomma }} kg ({{ m.desvio_pct }}%)</small>
+                {% else %}
+                  <span class="text-muted">{{ m.kilos_estimados|intcomma }} kg</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if m.clase_tabaco %}
+                  <span class="clase-pill clase-{{ m.clase_tabaco }}">Clase {{ m.clase_tabaco }}</span>
+                {% elif m.estado == 'CANCELADO' %}
+                  <span class="badge-soltat badge-cancelado">Anulado</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-end tabular-nums">
+                {% if m.kilos_reales %}
+                  <strong style="color: var(--color-secondary);">USD {{ m.importe_usd|floatformat:0|intcomma }}</strong>
+                  <small class="d-block text-muted">USD {{ m.precio_kg }}/kg</small>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-end pe-4 tabular-nums">
+                {% if m.kilos_reales %}
+                  {% if m.perdida_merma_usd > 0 or m.perdida_clase_usd > 0 %}
+                    <span class="text-danger fw-semibold">
+                      -USD {{ m.perdida_merma_usd|add:m.perdida_clase_usd|floatformat:0|intcomma }}
+                    </span>
+                    <small class="d-block text-muted">
+                      Merma: {{ m.perdida_merma_usd|floatformat:0 }} · Cal: {{ m.perdida_clase_usd|floatformat:0 }}
+                    </small>
+                  {% else %}
+                    <span class="text-success small fw-semibold">Máximo (Clase A)</span>
+                  {% endif %}
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{{ graficos|json_script:"datosGraficosProductor" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const rawEl = document.getElementById('datosGraficosProductor');
+    if (!rawEl || typeof Chart === 'undefined') return;
+    const g = JSON.parse(rawEl.textContent);
+
+    Chart.defaults.font.family = "'Roboto', sans-serif";
+    Chart.defaults.color = '#5C6B73';
+
+    // 1. Liquidación (USD) y Precio/kg por entrega
+    const ctxIng = document.getElementById('chartIngresosProductor');
+    if (ctxIng && g.entregas) {
+      new Chart(ctxIng, {
+        type: 'bar',
+        data: {
+          labels: g.entregas.labels,
+          datasets: [
+            {
+              label: 'Liquidación (USD)',
+              data: g.entregas.importe,
+              backgroundColor: '#173F35',
+              borderRadius: 5,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Precio Liquidado (USD/kg)',
+              data: g.entregas.precio,
+              type: 'line',
+              borderColor: '#D6A84F',
+              backgroundColor: '#D6A84F',
+              borderWidth: 2.5,
+              tension: 0.25,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { beginAtZero: true, ticks: { callback: v => 'USD ' + v.toLocaleString('es-AR') } },
+            y1: { beginAtZero: false, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => 'USD ' + v.toFixed(2) } }
+          }
+        }
+      });
+    }
+
+    // 2. Tiempos apilados por entrega: Viaje + Espera en Playón
+    const ctxTiempos = document.getElementById('chartTiemposProductor');
+    if (ctxTiempos && g.entregas) {
+      new Chart(ctxTiempos, {
+        type: 'bar',
+        data: {
+          labels: g.entregas.labels,
+          datasets: [
+            {
+              label: 'Viaje Finca → Garita (min)',
+              data: g.entregas.viaje,
+              backgroundColor: '#6F9863',
+              borderRadius: 4
+            },
+            {
+              label: 'Espera en Playón → Báscula (min)',
+              data: g.entregas.espera,
+              backgroundColor: '#D6A84F',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { stacked: true },
+            y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Minutos totales del recorrido' } }
+          }
+        }
+      });
+    }
+
+    // 3. Comparativa de Espera por Banda Horaria (Mi Finca vs Planta)
+    const ctxFranjas = document.getElementById('chartFranjasProductor');
+    if (ctxFranjas && g.franjas) {
+      new Chart(ctxFranjas, {
+        type: 'bar',
+        data: {
+          labels: g.franjas.labels,
+          datasets: [
+            {
+              label: 'Mi Espera Media (min)',
+              data: g.franjas.propia,
+              backgroundColor: '#173F35',
+              borderRadius: 5
+            },
+            {
+              label: 'Promedio General de Planta (min)',
+              data: g.franjas.planta,
+              backgroundColor: '#DED9CC',
+              borderColor: '#5C6B73',
+              borderWidth: 1,
+              borderRadius: 5
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Minutos en playón' } }
+          }
+        }
+      });
+    }
+
+    // 4. Kilos Declarados vs Kilos Reales en Báscula
+    const ctxKilos = document.getElementById('chartKilosProductor');
+    if (ctxKilos && g.entregas) {
+      new Chart(ctxKilos, {
+        type: 'line',
+        data: {
+          labels: g.entregas.labels,
+          datasets: [
+            {
+              label: 'Kilos Netos en Báscula',
+              data: g.entregas.real,
+              borderColor: '#173F35',
+              backgroundColor: 'rgba(23, 63, 53, 0.12)',
+              borderWidth: 2.5,
+              fill: true,
+              tension: 0.25
+            },
+            {
+              label: 'Kilos Estimados al Reservar',
+              data: g.entregas.estimado,
+              borderColor: '#D6A84F',
+              borderDash: [5, 4],
+              borderWidth: 2,
+              fill: false,
+              tension: 0.25
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { beginAtZero: false, ticks: { callback: v => v.toLocaleString('es-AR') + ' kg' } }
+          }
+        }
+      });
+    }
+  });
+</script>
+{% endblock %}
+

@@ -1,0 +1,519 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Mesa de Recepción y Playa · SOLTAT{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4">
+
+  <!-- 1. CABECERA OPERATIVA DE PLANTA Y NAVEGADOR DE JORNADA -->
+  <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end mb-4 gap-3">
+    <div>
+      <span class="section-eyebrow">
+        <i class="bi bi-broadcast me-1"></i> Centro de Recepción, Playón y Báscula
+      </span>
+      <h1 class="h2 mb-1">{{ empresa_actual.nombre }}</h1>
+      <div class="text-muted small d-flex flex-wrap align-items-center gap-3">
+        <span><i class="bi bi-geo-alt me-1"></i>{{ empresa_actual.direccion|default:"Planta Central Habilitada" }}</span>
+        <span>·</span>
+        <span>CUIT Planta: <strong>{{ empresa_actual.cuit }}</strong></span>
+      </div>
+    </div>
+
+    <!-- Controles de Jornada y Exportación -->
+    <div class="d-flex flex-wrap align-items-center gap-2">
+
+      {% if empresas_disponibles.count > 1 and not user.empresa_asociada %}
+        <!-- Marcado en rojo porque en producción cada operador pertenece a una única empresa fija -->
+        <form method="get" action="{% url 'turnos:panel_empresa' %}" class="proto-only-inline d-flex align-items-center gap-2">
+          <span class="badge bg-danger" style="font-size: 0.65rem;">SOLO DEMO / ADMIN</span>
+          <input type="hidden" name="fecha" value="{{ fecha_seleccionada }}">
+          <select name="empresa" class="form-select form-select-sm py-1" style="font-size: 0.82rem; min-width: 210px;" onchange="this.form.submit()">
+            {% for emp in empresas_disponibles %}
+              <option value="{{ emp.id }}" {% if empresa_actual.id == emp.id %}selected{% endif %}>
+                Planta: {{ emp.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </form>
+      {% endif %}
+
+      <!-- Selector Táctil de Fecha Operativa -->
+      <div class="card-soltat p-1 d-inline-flex flex-row align-items-center gap-1">
+        <a href="?fecha={{ fecha_anterior }}&amp;empresa={{ empresa_actual.id }}" class="btn btn-sm btn-light border-0 px-2" title="Jornada anterior">
+          <i class="bi bi-chevron-left"></i>
+        </a>
+
+        <form method="get" action="{% url 'turnos:panel_empresa' %}" class="d-inline-flex align-items-center m-0">
+          <input type="hidden" name="empresa" value="{{ empresa_actual.id }}">
+          <input
+            type="date"
+            name="fecha"
+            value="{{ fecha_seleccionada }}"
+            class="form-control form-control-sm border-0 bg-transparent fw-bold tabular-nums"
+            style="width: 142px; color: var(--color-primary);"
+            onchange="this.form.submit()">
+        </form>
+
+        <a href="?fecha={{ fecha_siguiente }}&amp;empresa={{ empresa_actual.id }}" class="btn btn-sm btn-light border-0 px-2" title="Jornada siguiente">
+          <i class="bi bi-chevron-right"></i>
+        </a>
+
+        {% if not es_hoy %}
+          <a href="?fecha={{ hoy_iso }}&amp;empresa={{ empresa_actual.id }}" class="btn btn-sm btn-outline-soltat py-1 px-2 ms-1" style="font-size: 0.76rem;">
+            Ir a Hoy
+          </a>
+        {% else %}
+          <span class="badge px-2 py-1 me-1" style="background-color: var(--color-primary-soft); color: var(--color-primary); font-size: 0.72rem;">
+            Jornada Actual
+          </span>
+        {% endif %}
+      </div>
+
+      <!-- Exportación Oficial CSV / Excel -->
+      <a href="{% url 'turnos:exportar_csv' %}?fecha={{ fecha_seleccionada }}&amp;empresa={{ empresa_actual.id }}" class="btn btn-outline-soltat d-inline-flex align-items-center gap-2" style="font-size: 0.85rem;">
+        <i class="bi bi-file-earmark-spreadsheet"></i>
+        <span>Exportar (.CSV)</span>
+      </a>
+
+      <!-- Acceso Directo al Tablero Gerencial SAD -->
+      <a href="{% url 'turnos:gerencia_empresa' %}?empresa={{ empresa_actual.id }}" class="btn btn-primary-soltat d-inline-flex align-items-center gap-2 py-2 px-3" style="font-size: 0.85rem;">
+        <i class="bi bi-graph-up-arrow"></i>
+        <span>Inteligencia Gerencial (SAD)</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- 2. BALANCE DE CUPO OPERATIVO DIARIO (MEDIDOR INDUSTRIAL DE PRECISIÓN) -->
+  {% if metricas_cupo %}
+    <div class="telemetry-panel mb-4">
+      <div class="row align-items-end g-3 mb-3">
+        <div class="col-md-7">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="text-uppercase fw-bold small" style="letter-spacing: 0.07em; color: var(--color-text-muted);">
+              Cupo Diario Comprometido · {{ fecha_display }}
+            </span>
+            <span class="badge-soltat" style="background-color: {{ metricas_cupo.color_hex }}; color: #FFFFFF;">
+              {% if metricas_cupo.nivel_semaforo == 'normal' %}
+                <i class="bi bi-check-circle-fill"></i> Recepción Habilitada ({{ metricas_cupo.porcentaje_ocupacion }}%)
+              {% elif metricas_cupo.nivel_semaforo == 'alerta' %}
+                <i class="bi bi-exclamation-triangle-fill"></i> Zona de Alerta ({{ metricas_cupo.porcentaje_ocupacion }}%)
+              {% else %}
+                <i class="bi bi-lock-fill"></i> Cupo Cerrado (100%)
+              {% endif %}
+            </span>
+          </div>
+
+          <div class="d-flex align-items-baseline gap-2 flex-wrap">
+            <span class="display-6 fw-bold tabular-nums mb-0" style="font-family: 'Montserrat', sans-serif; color: var(--color-primary);">
+              {{ metricas_cupo.kilos_ocupados|intcomma }} <small class="fs-5 fw-semibold">kg</small>
+            </span>
+            <span class="text-muted fs-6">
+              asignados sobre un tope operativo de <strong class="text-dark tabular-nums">{{ metricas_cupo.capacidad_maxima|intcomma }} kg</strong>
+            </span>
+          </div>
+        </div>
+
+        <div class="col-md-5 text-md-end">
+          <div class="d-inline-block text-start text-md-end px-3 py-2 rounded-3" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
+            <span class="d-block small text-muted">Margen Libre Disponible para Reservas</span>
+            <span class="h4 fw-bold tabular-nums mb-0" style="font-family: 'Montserrat', sans-serif; color: {% if metricas_cupo.remanente_disponible > 0 %}var(--color-secondary){% else %}var(--color-danger){% endif %};">
+              {{ metricas_cupo.remanente_disponible|intcomma }} kg
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pista de Ocupación con Marcador de Umbral del 80% -->
+      <div class="position-relative pt-1 pb-2">
+        <div class="cupo-gauge-track">
+          <div class="cupo-threshold-marker" title="Umbral preventivo de alerta (80% = 200.000 kg)"></div>
+          <div
+            class="cupo-gauge-fill nivel-{{ metricas_cupo.nivel_semaforo }}"
+            style="width: {{ metricas_cupo.porcentaje_ocupacion|stringformat:'f' }}%;"
+            role="progressbar"
+            aria-valuenow="{{ metricas_cupo.porcentaje_ocupacion }}"
+            aria-valuemin="0"
+            aria-valuemax="100">
+          </div>
+        </div>
+        <div class="d-flex justify-content-between text-muted mt-2" style="font-size: 0.74rem;">
+          <span class="tabular-nums">0 kg (Apertura)</span>
+          <span class="tabular-nums d-none d-sm-inline">125.000 kg (50%)</span>
+          <span class="fw-semibold" style="color: #8C6512;">▲ Alerta 80% (200.000 kg)</span>
+          <span class="tabular-nums fw-semibold text-dark">Tope {{ metricas_cupo.capacidad_maxima|intcomma }} kg</span>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- 3. CIRCUITO DE FLUJO EN PLANTA (3 ETAPAS CON VOLUMEN Y UNIDADES) -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="stage-kpi-card h-100">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="stage-step-num">Etapa 01 · En Ruta / Reserva</span>
+          <span class="badge badge-confirmado">Pendiente Garita</span>
+        </div>
+        <div class="d-flex align-items-baseline justify-content-between">
+          <div>
+            <span class="h2 fw-bold tabular-nums mb-0" style="color: var(--color-primary);">{{ confirmados_count }}</span>
+            <span class="text-muted small ms-1">unidad{% if confirmados_count != 1 %}es{% endif %}</span>
+          </div>
+          <div class="text-end">
+            <span class="fw-bold tabular-nums text-dark">{{ kilos_confirmados|intcomma }} kg</span>
+            <span class="d-block text-muted" style="font-size: 0.72rem;">por ingresar</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="stage-kpi-card stage-playa h-100">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="stage-step-num">Etapa 02 · Playón de Espera</span>
+          <span class="badge badge-en-playa">En Planta</span>
+        </div>
+        <div class="d-flex align-items-baseline justify-content-between">
+          <div>
+            <span class="h2 fw-bold tabular-nums mb-0" style="color: #9A6B10;">{{ en_playa_count }}</span>
+            <span class="text-muted small ms-1">unidad{% if en_playa_count != 1 %}es{% endif %}</span>
+          </div>
+          <div class="text-end">
+            <span class="fw-bold tabular-nums text-dark">{{ kilos_en_playa|intcomma }} kg</span>
+            <span class="d-block text-muted" style="font-size: 0.72rem;">aguardando báscula</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="stage-kpi-card stage-descargado h-100">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="stage-step-num">Etapa 03 · Báscula y Fosa</span>
+          <span class="badge badge-descargado">Finalizado</span>
+        </div>
+        <div class="d-flex align-items-baseline justify-content-between">
+          <div>
+            <span class="h2 fw-bold tabular-nums mb-0" style="color: var(--color-secondary);">{{ descargados_count }}</span>
+            <span class="text-muted small ms-1">unidad{% if descargados_count != 1 %}es{% endif %}</span>
+          </div>
+          <div class="text-end">
+            <span class="fw-bold tabular-nums text-dark">{{ kilos_descargados|intcomma }} kg</span>
+            <span class="d-block text-muted" style="font-size: 0.72rem;">recepcionados hoy</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PLANILLA OPERATIVA DE MOVIMIENTO EN PLAYA Y BÁSCULA -->
+  <div class="board-container mb-4">
+
+    <!-- Barra de Herramientas Interactiva -->
+    <div class="board-toolbar d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+      <div>
+        <h2 class="h5 mb-1">Planilla de Movimiento en Playa y Báscula</h2>
+        <p class="text-muted small mb-0">
+          Secuencia cronológica de arribos programados para el <strong>{{ fecha_display }}</strong>. Acredite el ingreso en garita y cierre la descarga tras el pesaje.
+        </p>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <!-- Filtros rápidos por etapa sin recargar -->
+        <div class="op-filter-pills" role="tablist" aria-label="Filtrar por etapa operativa">
+          <button type="button" class="op-filter-btn active" data-filter="ALL">
+            Todas ({{ turnos.count }})
+          </button>
+          <button type="button" class="op-filter-btn" data-filter="CONFIRMADO">
+            Por Arribar ({{ confirmados_count }})
+          </button>
+          <button type="button" class="op-filter-btn" data-filter="EN_PLAYA">
+            En Playón ({{ en_playa_count }})
+          </button>
+          <button type="button" class="op-filter-btn" data-filter="DESCARGADO">
+            Descargadas ({{ descargados_count }})
+          </button>
+        </div>
+
+        <!-- Buscador instantáneo para operador de garita -->
+        <div class="op-search-wrapper">
+          <i class="bi bi-search"></i>
+          <input
+            type="search"
+            id="inputBuscarUnidad"
+            class="form-control op-search-input"
+            placeholder="Patente, productor, CUIT o código...">
+        </div>
+      </div>
+    </div>
+
+    <!-- Listado Operativo -->
+    {% if turnos %}
+      <div class="table-responsive">
+        <table class="table table-soltat" id="tablaOperativaPlaya">
+          <thead>
+            <tr>
+              <th scope="col">Ventana Horaria</th>
+              <th scope="col">Dominio</th>
+              <th scope="col">Productor / Lote y Tiempos de Recorrido</th>
+              <th scope="col" class="text-end">Carga / Báscula</th>
+              <th scope="col" class="text-center">Situación en Planta</th>
+              <th scope="col" class="text-end pe-4">Despacho y Liquidación</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in turnos %}
+              <tr
+                class="fila-turno {% if t.estado == 'EN_PLAYA' %}row-en-playa{% endif %}"
+                data-estado="{{ t.estado }}"
+                data-search="{{ t.codigo|lower }} {{ t.patente_vehiculo|lower }} {{ t.productor.cuit_dni|lower }} {{ t.productor.razon_social|default:t.productor.username|lower }} {{ t.observaciones|default:''|lower }}">
+
+                <!-- Ventana Horaria -->
+                <td>
+                  <span class="time-window-pill tabular-nums">
+                    <i class="bi bi-clock"></i>
+                    {{ t.franja_horaria }}
+                  </span>
+                  <div class="mt-1">
+                    <a href="{% url 'turnos:comprobante' t.codigo %}" class="text-decoration-none font-monospace small fw-semibold" style="color: var(--color-text-muted);" title="Abrir Orden de Ingreso">
+                      <i class="bi bi-qr-code me-1"></i>{{ t.codigo }}
+                    </a>
+                  </div>
+                </td>
+
+                <!-- Chapa Patente Estilo Mercosur -->
+                <td>
+                  <div class="chapa-patente">
+                    <span class="chapa-top">ARGENTINA</span>
+                    <span class="chapa-num">{{ t.patente_vehiculo }}</span>
+                  </div>
+                </td>
+
+                <!-- Productor, Observación y Tiempos del Recorrido -->
+                <td>
+                  <div class="fw-bold text-dark" style="font-size: 0.95rem;">
+                    {{ t.productor.razon_social|default:t.productor.get_full_name|default:t.productor.username }}
+                  </div>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                    <span class="text-muted small tabular-nums">CUIT {{ t.productor.cuit_dni }}</span>
+                    {% if t.observaciones %}
+                      <span class="badge fw-normal text-dark" style="background-color: var(--color-surface-muted); border: 1px solid var(--color-border); font-size: 0.72rem;">
+                        {{ t.observaciones|truncatechars:38 }}
+                      </span>
+                    {% endif %}
+                    {% if t.minutos_viaje is not None %}
+                      <span class="route-metric-chip" title="Tiempo de viaje Finca → Garita">
+                        <i class="bi bi-truck text-secondary"></i> Ruta: {{ t.minutos_viaje|floatformat:0 }} min
+                      </span>
+                    {% elif t.hora_salida_origen %}
+                      <span class="route-metric-chip" style="border-color: var(--color-secondary);">
+                        <i class="bi bi-broadcast text-success"></i> Salió {{ t.hora_salida_origen|date:"H:i" }} hs
+                      </span>
+                    {% endif %}
+                    {% if t.minutos_espera is not None %}
+                      <span class="route-metric-chip" title="Tiempo en Playón → Báscula">
+                        <i class="bi bi-hourglass-split" style="color: #8C6512;"></i> Playón: {{ t.minutos_espera|floatformat:0 }} min
+                      </span>
+                    {% endif %}
+                  </div>
+                </td>
+
+                <!-- Kilos Estimados vs Reales -->
+                <td class="text-end tabular-nums">
+                  {% if t.kilos_reales %}
+                    <div class="fw-bold" style="font-size: 1.05rem; color: var(--color-primary);">
+                      {{ t.kilos_reales|intcomma }} kg <span class="clase-pill clase-{{ t.clase_tabaco }} ms-1">{{ t.clase_tabaco }}</span>
+                    </div>
+                    <small class="text-muted d-block">
+                      Est: {{ t.kilos_estimados|intcomma }} kg · <strong style="color: var(--color-secondary);">USD {{ t.importe_usd|floatformat:0|intcomma }}</strong>
+                    </small>
+                  {% else %}
+                    <span class="fw-bold" style="font-size: 1.05rem; color: var(--color-primary);">
+                      {{ t.kilos_estimados|intcomma }} kg
+                    </span>
+                    <small class="text-muted d-block">Declarado</small>
+                  {% endif %}
+                </td>
+
+                <!-- Estado Operativo -->
+                <td class="text-center">
+                  <span class="badge-soltat {{ t.badge_class }}">
+                    {% if t.estado == 'CONFIRMADO' %}
+                      <i class="bi bi-signpost-split"></i> En Ruta · Confirmado
+                    {% elif t.estado == 'EN_PLAYA' %}
+                      <i class="bi bi-truck-front-fill"></i> En Playón
+                    {% elif t.estado == 'DESCARGADO' %}
+                      <i class="bi bi-check2-all"></i> Descargado
+                    {% else %}
+                      <i class="bi bi-slash-circle"></i> Anulado
+                    {% endif %}
+                  </span>
+                </td>
+
+                <!-- Acciones de Transición y Cierre de Báscula -->
+                <td class="text-end pe-4">
+                  {% if t.estado == 'CONFIRMADO' %}
+                    <div class="d-inline-flex align-items-center gap-1">
+                      <form method="post" action="{% url 'turnos:cambiar_estado' t.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="nuevo_estado" value="EN_PLAYA">
+                        <input type="hidden" name="fecha" value="{{ fecha_seleccionada }}">
+                        <input type="hidden" name="empresa_id" value="{{ empresa_actual.id }}">
+                        <button type="submit" class="btn btn-sm btn-accent-soltat d-inline-flex align-items-center gap-1">
+                          <span>Habilitar Playón</span>
+                          <i class="bi bi-arrow-right-short fs-6"></i>
+                        </button>
+                      </form>
+
+                      <form
+                        method="post"
+                        action="{% url 'turnos:cambiar_estado' t.id %}"
+                        class="d-inline"
+                        onsubmit="return confirm('¿Anular el turno {{ t.codigo }} y liberar {{ t.kilos_estimados|intcomma }} kg del cupo diario?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="nuevo_estado" value="CANCELADO">
+                        <input type="hidden" name="fecha" value="{{ fecha_seleccionada }}">
+                        <input type="hidden" name="empresa_id" value="{{ empresa_actual.id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" style="border-radius: 7px;" title="Anular turno por inasistencia y liberar cupo">
+                          <i class="bi bi-x-lg"></i>
+                        </button>
+                      </form>
+                    </div>
+
+                  {% elif t.estado == 'EN_PLAYA' %}
+                    <form method="post" action="{% url 'turnos:cambiar_estado' t.id %}" class="d-inline-flex flex-wrap justify-content-end align-items-center gap-1">
+                      {% csrf_token %}
+                      <input type="hidden" name="nuevo_estado" value="DESCARGADO">
+                      <input type="hidden" name="fecha" value="{{ fecha_seleccionada }}">
+                      <input type="hidden" name="empresa_id" value="{{ empresa_actual.id }}">
+                      <input
+                        type="number"
+                        name="kilos_reales"
+                        value="{{ t.kilos_estimados }}"
+                        min="50"
+                        step="50"
+                        class="form-control form-control-sm tabular-nums text-end py-1 px-2"
+                        style="width: 98px; font-size: 0.8rem;"
+                        title="Kilos netos pesados en báscula"
+                        required>
+                      <select
+                        name="clase_tabaco"
+                        class="form-select form-select-sm py-1 px-2"
+                        style="width: 88px; font-size: 0.8rem;"
+                        title="Clase comercial asignada">
+                        <option value="A">Clase A</option>
+                        <option value="B">Clase B</option>
+                        <option value="C">Clase C</option>
+                        <option value="D">Clase D</option>
+                      </select>
+                      <button type="submit" class="btn btn-sm btn-secondary-soltat d-inline-flex align-items-center gap-1">
+                        <i class="bi bi-check2-circle"></i>
+                        <span>Liquidar</span>
+                      </button>
+                    </form>
+
+                  {% elif t.estado == 'DESCARGADO' %}
+                    <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat py-1 px-2" style="font-size: 0.78rem;">
+                      <i class="bi bi-receipt me-1"></i> Ver Liquidación
+                    </a>
+                  {% else %}
+                    <span class="text-muted small">Cupo liberado</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mensaje cuando el filtro rápido no arroja coincidencias -->
+      <div id="sinResultadosFiltro" class="text-center py-5 d-none">
+        <i class="bi bi-search fs-3 text-muted d-block mb-2"></i>
+        <p class="text-muted mb-0">Ninguna unidad coincide con el filtro o dominio buscado.</p>
+      </div>
+
+    {% else %}
+      <div class="text-center py-5 px-3">
+        <div class="d-inline-flex align-items-center justify-content-center rounded-circle mb-3" style="width: 56px; height: 56px; background-color: var(--color-surface-muted); color: var(--color-primary);">
+          <i class="bi bi-calendar2-x fs-4"></i>
+        </div>
+        <h3 class="h6 mb-1">Sin unidades programadas para el {{ fecha_display }}</h3>
+        <p class="text-muted small mb-0">
+          El cupo completo ({{ empresa_actual.capacidad_diaria_kg|intcomma }} kg) se encuentra disponible para reservas de productores.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- =================================================================
+       NOTA TEMPORAL DE PROTOTIPO MARCADA EN ROJO PARA REUNIÓN DE EQUIPO
+       ================================================================= -->
+  <div class="proto-only-box mb-3">
+    <span class="proto-only-tag">
+      <i class="bi bi-cone-striped"></i>
+      Temporal · Referencia para Reunión Interna (No estará en el producto final)
+    </span>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+      <p class="proto-only-note mb-0">
+        <strong>Datos de prueba precargados:</strong> Los 4 camiones iniciales de la jornada actual provienen del comando <code>seed_data</code> (185.000 kg ocupados / 65.000 kg libres) para demostrar el cálculo del cupo y las transiciones de playa en vivo.
+      </p>
+      <a href="{% url 'logout' %}" class="btn btn-sm bg-white border text-danger fw-semibold flex-shrink-0" style="border-color: #FCA5A5 !important; font-size: 0.78rem;">
+        <i class="bi bi-arrow-left-right me-1"></i> Cambiar a perfil Productor (Demo)
+      </a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const botonesFiltro = document.querySelectorAll('.op-filter-btn');
+    const inputBusqueda = document.getElementById('inputBuscarUnidad');
+    const filas = document.querySelectorAll('.fila-turno');
+    const avisoVacio = document.getElementById('sinResultadosFiltro');
+
+    let estadoActivo = 'ALL';
+
+    function aplicarFiltros() {
+      const termino = (inputBusqueda ? inputBusqueda.value : '').trim().toLowerCase();
+      let visibles = 0;
+
+      filas.forEach(fila => {
+        const estadoFila = fila.getAttribute('data-estado');
+        const textoFila = fila.getAttribute('data-search') || '';
+
+        const coincideEstado = (estadoActivo === 'ALL') || (estadoFila === estadoActivo);
+        const coincideTexto = !termino || textoFila.includes(termino);
+
+        if (coincideEstado && coincideTexto) {
+          fila.classList.remove('d-none');
+          visibles++;
+        } else {
+          fila.classList.add('d-none');
+        }
+      });
+
+      if (avisoVacio) {
+        avisoVacio.classList.toggle('d-none', visibles > 0 || filas.length === 0);
+      }
+    }
+
+    botonesFiltro.forEach(btn => {
+      btn.addEventListener('click', function() {
+        botonesFiltro.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        estadoActivo = this.getAttribute('data-filter');
+        aplicarFiltros();
+      });
+    });
+
+    if (inputBusqueda) {
+      inputBusqueda.addEventListener('input', aplicarFiltros);
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Orden de Ingreso {{ turno.codigo }} · SOLTAT{% endblock %}
+
+{% block content %}
+<div class="container py-2">
+
+  <!-- Barra de navegación superior de la orden -->
+  <div class="d-flex justify-content-between align-items-center mb-3 mx-auto d-print-none" style="max-width: 680px;">
+    {% if user.es_empresa %}
+      <a href="{% url 'turnos:panel_empresa' %}?fecha={{ turno.fecha_entrega|date:'Y-m-d' }}&amp;empresa={{ turno.empresa.id }}" class="btn btn-sm btn-outline-soltat">
+        <i class="bi bi-arrow-left me-1"></i> Volver a Planilla de Playa
+      </a>
+    {% else %}
+      <a href="{% url 'turnos:solicitar_turno' %}" class="btn btn-sm btn-outline-soltat">
+        <i class="bi bi-arrow-left me-1"></i> Nueva Reserva de Descarga
+      </a>
+    {% endif %}
+
+    <button onclick="window.print()" class="btn btn-sm btn-primary-soltat">
+      <i class="bi bi-printer me-1"></i> Imprimir Orden de Ingreso
+    </button>
+  </div>
+
+  <!-- Documento Oficial: Orden de Ingreso a Planta y Báscula -->
+  <div class="comprobante-card">
+
+    <!-- Banda Superior Institucional -->
+    <div class="comprobante-top-band d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+      <div>
+        <span class="text-uppercase fw-bold d-block" style="font-size: 0.68rem; letter-spacing: 0.12em; color: var(--color-accent);">
+          Documento Habilitante de Garita y Báscula
+        </span>
+        <h1 class="h4 text-white mb-0 mt-1" style="font-family: 'Montserrat', sans-serif;">
+          ORDEN DE INGRESO A ACOPIO
+        </h1>
+      </div>
+
+      <div class="text-sm-end">
+        <span class="badge-soltat {{ turno.badge_class }}">
+          <i class="bi bi-patch-check-fill"></i> {{ turno.get_estado_display }}
+        </span>
+      </div>
+    </div>
+
+    <div class="p-4 p-md-5">
+
+      <!-- Cabecera de Identificación Rápida (Código + Patente) -->
+      <div class="row g-3 align-items-center p-3 rounded-3 mb-4" style="background-color: var(--color-surface-warm); border: 1.5px solid var(--color-border);">
+        <div class="col-sm-8">
+          <span class="text-muted text-uppercase fw-bold d-block" style="font-size: 0.68rem; letter-spacing: 0.08em;">
+            Código Único de Turno
+          </span>
+          <div class="h2 fw-bold font-monospace mb-0 mt-1" style="color: var(--color-primary); letter-spacing: 0.05em;">
+            {{ turno.codigo }}
+          </div>
+        </div>
+        <div class="col-sm-4 text-sm-end">
+          <span class="text-muted text-uppercase fw-bold d-block mb-1" style="font-size: 0.68rem; letter-spacing: 0.08em;">
+            Dominio Autorizado
+          </span>
+          <div class="chapa-patente">
+            <span class="chapa-top">ARGENTINA</span>
+            <span class="chapa-num">{{ turno.patente_vehiculo }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Datos de Ventana y Carga -->
+      <div class="row g-4">
+        <div class="col-sm-6">
+          <span class="text-muted small d-block">Planta de Destino</span>
+          <strong class="text-dark d-block" style="font-size: 1rem;">{{ turno.empresa.nombre }}</strong>
+          <span class="text-muted small">CUIT {{ turno.empresa.cuit }}</span>
+        </div>
+
+        <div class="col-sm-6">
+          <span class="text-muted small d-block">Productor Remitente</span>
+          <strong class="text-dark d-block" style="font-size: 1rem;">
+            {{ turno.productor.razon_social|default:turno.productor.get_full_name|default:turno.productor.username }}
+          </strong>
+          <span class="text-muted small">CUIT/DNI {{ turno.productor.cuit_dni }}</span>
+        </div>
+
+        <div class="col-sm-4">
+          <div class="p-3 rounded-3 h-100" style="background-color: var(--color-primary-soft);">
+            <span class="text-muted small d-block">Fecha Asignada</span>
+            <strong class="fs-5 tabular-nums" style="color: var(--color-primary);">
+              {{ turno.fecha_entrega|date:"d/m/Y" }}
+            </strong>
+          </div>
+        </div>
+
+        <div class="col-sm-4">
+          <div class="p-3 rounded-3 h-100" style="background-color: var(--color-primary-soft);">
+            <span class="text-muted small d-block">Ventana de Arribo</span>
+            <strong class="fs-5 tabular-nums" style="color: var(--color-primary);">
+              {{ turno.franja_horaria }}
+            </strong>
+          </div>
+        </div>
+
+        <div class="col-sm-4">
+          <div class="p-3 rounded-3 h-100" style="background-color: var(--color-accent-soft); border: 1px solid rgba(214,168,79,0.4);">
+            <span class="text-muted small d-block">Cupo Reservado</span>
+            <strong class="fs-5 tabular-nums" style="color: #7D580C;">
+              {{ turno.kilos_estimados|intcomma }} kg
+            </strong>
+          </div>
+        </div>
+
+        {% if turno.observaciones %}
+          <div class="col-12">
+            <span class="text-muted small d-block mb-1">Declaración Complementaria de Lote</span>
+            <div class="p-2 px-3 rounded-3 small text-dark" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
+              {{ turno.observaciones }}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Bitácora Cronológica de Trazabilidad y Liquidación de Báscula -->
+      <div class="mt-4 p-3 rounded-3" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="text-uppercase fw-bold" style="font-size: 0.7rem; letter-spacing: 0.08em; color: var(--color-primary); font-family: 'Montserrat', sans-serif;">
+            <i class="bi bi-stopwatch me-1"></i> Trazabilidad del Recorrido y Liquidación Oficial
+          </span>
+          {% if turno.minutos_ciclo is not None %}
+            <span class="route-metric-chip fast">
+              Ciclo Total: {{ turno.minutos_ciclo }} min ({{ turno.minutos_viaje }}m ruta + {{ turno.minutos_espera }}m planta)
+            </span>
+          {% endif %}
+        </div>
+
+        <div class="row g-2 text-center mt-1">
+          <div class="col-sm-4">
+            <div class="p-2 rounded bg-white border">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">1. Salida de Finca</span>
+              <strong class="tabular-nums text-dark" style="font-size: 0.88rem;">
+                {% if turno.hora_salida_origen %}{{ turno.hora_salida_origen|date:"H:i" }} hs{% else %}Pendiente{% endif %}
+              </strong>
+            </div>
+          </div>
+          <div class="col-sm-4">
+            <div class="p-2 rounded bg-white border">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">2. Arribo a Garita</span>
+              <strong class="tabular-nums text-dark" style="font-size: 0.88rem;">
+                {% if turno.hora_arribo_playa %}{{ turno.hora_arribo_playa|date:"H:i" }} hs{% else %}Pendiente{% endif %}
+              </strong>
+            </div>
+          </div>
+          <div class="col-sm-4">
+            <div class="p-2 rounded bg-white border">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">3. Descarga en Báscula</span>
+              <strong class="tabular-nums text-dark" style="font-size: 0.88rem;">
+                {% if turno.hora_descarga %}{{ turno.hora_descarga|date:"H:i" }} hs{% else %}Pendiente{% endif %}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        {% if turno.kilos_reales %}
+          <div class="row g-2 mt-2 pt-2 border-top text-center" style="border-color: var(--color-border) !important;">
+            <div class="col-sm-4">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">Kilos Netos Báscula</span>
+              <strong class="tabular-nums" style="color: var(--color-primary); font-family: 'Montserrat', sans-serif;">
+                {{ turno.kilos_reales|intcomma }} kg
+              </strong>
+              <span class="d-block text-muted tabular-nums" style="font-size: 0.68rem;">
+                ({% if turno.diferencia_kg >= 0 %}+{% endif %}{{ turno.diferencia_kg|intcomma }} kg vs. reserva)
+              </span>
+            </div>
+            <div class="col-sm-4">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">Tipificación Oficial</span>
+              <span class="clase-pill clase-{{ turno.clase_tabaco|default:'B' }} mt-1">
+                Clase {{ turno.clase_tabaco }} · USD {{ turno.precio_kg|floatformat:2 }}/kg
+              </span>
+            </div>
+            <div class="col-sm-4">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">Liquidación Total Lote</span>
+              <strong class="tabular-nums text-success" style="font-size: 1rem; font-family: 'Montserrat', sans-serif;">
+                USD {{ turno.importe_usd|floatformat:2|intcomma }}
+              </strong>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="ticket-divider"></div>
+
+      <!-- Condiciones Operativas de Recepción -->
+      <div class="row g-3 align-items-center">
+        <div class="col-md-8">
+          <h6 class="fw-bold mb-1" style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em;">
+            Protocolo de Acreditación en Garita
+          </h6>
+          <ul class="small text-muted mb-0 ps-3" style="line-height: 1.55;">
+            <li>Exhibir este código al operador de portería dentro de la banda <strong>{{ turno.franja_horaria }} hs</strong>.</li>
+            <li>La liquidación final se regirá por el kilaje neto registrado en báscula oficial.</li>
+          </ul>
+        </div>
+        <div class="col-md-4 text-md-end pt-2 pt-md-0">
+          <div class="d-inline-flex flex-column align-items-md-end">
+            <img src="{% static 'img/logo_3b_full.png' %}" alt="3B Systems" style="height: 24px; width: auto; opacity: 0.9;">
+            <span class="text-muted mt-1 tabular-nums" style="font-size: 0.7rem;">
+              Emisión: {{ turno.creado_el|date:"d/m/Y H:i" }} hs
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

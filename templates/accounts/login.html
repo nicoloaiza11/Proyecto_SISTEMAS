@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Acceso Operativo · SOLTAT{% endblock %}
+
+{% block content %}
+<div class="container py-3 py-lg-4">
+
+  <div class="login-shell">
+    <div class="row g-0">
+
+      <!-- Panel Izquierdo: Identidad Operativa SOLTAT + Firma 3B Systems -->
+      <div class="col-lg-5 login-brand-panel">
+        <div>
+          <span class="badge mb-3 px-3 py-2" style="background: rgba(214,168,79,0.18); color: var(--color-accent); border: 1px solid rgba(214,168,79,0.4); font-family: 'Montserrat', sans-serif; font-size: 0.72rem; letter-spacing: 0.08em;">
+            CAMPAÑA TABACALERA 2026
+          </span>
+          <h1 class="h2 text-white mb-2" style="font-family: 'Montserrat', sans-serif;">
+            SOLTAT
+          </h1>
+          <p class="text-white-50 mb-4" style="font-size: 0.94rem; line-height: 1.55;">
+            Coordinación digital entre productores y centros de acopio para ordenar el ingreso de cargas y proteger la capacidad operativa diaria.
+          </p>
+
+          <div class="mt-4 pt-2">
+            <div class="login-pillar-item">
+              <div class="login-pillar-icon">
+                <i class="bi bi-shield-check"></i>
+              </div>
+              <div>
+                <div class="fw-bold text-white" style="font-size: 0.88rem;">Control Estricto de Cupo Diario</div>
+                <div class="text-white-50" style="font-size: 0.8rem;">Validación transaccional sobre el tope de 250.000 kg por planta.</div>
+              </div>
+            </div>
+
+            <div class="login-pillar-item">
+              <div class="login-pillar-icon">
+                <i class="bi bi-clock-history"></i>
+              </div>
+              <div>
+                <div class="fw-bold text-white" style="font-size: 0.88rem;">Bandas Horarias de 2 Horas</div>
+                <div class="text-white-50" style="font-size: 0.8rem;">Asignación escalonada para evitar esperas prolongadas en ruta.</div>
+              </div>
+            </div>
+
+            <div class="login-pillar-item mb-0">
+              <div class="login-pillar-icon">
+                <i class="bi bi-truck"></i>
+              </div>
+              <div>
+                <div class="fw-bold text-white" style="font-size: 0.88rem;">Trazabilidad Garita → Báscula</div>
+                <div class="text-white-50" style="font-size: 0.8rem;">Monitoreo en vivo de unidades en espera, en playón y descargadas.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Placa Distintiva de la Empresa Desarrolladora (3B Systems) -->
+        <div class="mt-4 pt-3">
+          <div class="corp-plaque-card">
+            <div>
+              <span class="d-block text-uppercase fw-bold" style="font-size: 0.63rem; letter-spacing: 0.09em; color: var(--color-text-muted);">
+                Solución desarrollada por
+              </span>
+              <span class="fw-bold" style="font-size: 0.84rem; color: var(--color-primary); font-family: 'Montserrat', sans-serif;">
+                Ingeniería &amp; Software Agroindustrial
+              </span>
+            </div>
+            <img src="{% static 'img/logo_3b_full.png' %}" alt="Logo 3B Systems">
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel Derecho: Formulario de Autenticación por Rol -->
+      <div class="col-lg-7 bg-white p-4 p-md-5 d-flex flex-column justify-content-center">
+
+        <div class="mb-4">
+          <span class="section-eyebrow">Portal Unificado de Acceso</span>
+          <h2 class="h3 mb-1">Identificación de Usuario</h2>
+          <p class="text-muted small mb-0">
+            Ingrese con su CUIT/DNI registrado. El sistema abrirá automáticamente su entorno de <strong>Productor</strong> o <strong>Planta de Acopio</strong>.
+          </p>
+        </div>
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-soltat-cupo-excedido mb-4 py-3 px-3 d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-octagon-fill fs-5 text-danger flex-shrink-0 mt-1"></i>
+            <div>
+              {% for error in form.non_field_errors %}
+                <div class="fw-medium" style="font-size: 0.9rem;">{{ error }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}" id="loginMainForm" novalidate>
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label for="{{ form.identificador.id_for_label }}" class="form-label">
+              CUIT / DNI o Identificador
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-white border-end-0" style="border-color: var(--color-border); color: var(--color-primary);">
+                <i class="bi bi-person-vcard"></i>
+              </span>
+              {{ form.identificador }}
+            </div>
+            {% if form.identificador.errors %}
+              <div class="text-danger small mt-1">{{ form.identificador.errors.0 }}</div>
+            {% endif %}
+            <div class="form-text small">Ingrese los números sin guiones ni puntos (ej. <code>20345678901</code>).</div>
+          </div>
+
+          <div class="mb-4">
+            <label for="{{ form.password.id_for_label }}" class="form-label">
+              Clave de Acceso
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-white border-end-0" style="border-color: var(--color-border); color: var(--color-primary);">
+                <i class="bi bi-key"></i>
+              </span>
+              {{ form.password }}
+            </div>
+            {% if form.password.errors %}
+              <div class="text-danger small mt-1">{{ form.password.errors.0 }}</div>
+            {% endif %}
+          </div>
+
+          <button type="submit" class="btn btn-primary-soltat w-100 py-3 d-flex align-items-center justify-content-center gap-2">
+            <span>Ingresar al Sistema</span>
+            <i class="bi bi-arrow-right"></i>
+          </button>
+        </form>
+
+        <!-- =================================================================
+             APARTADO TEMPORAL MARCADO EN ROJO (NO ESTARÁ EN EL PRODUCTO FINAL)
+             ================================================================= -->
+        <div class="proto-only-box mt-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-1">
+            <span class="proto-only-tag">
+              <i class="bi bi-cone-striped"></i>
+              Temporal · Solo Demo Interna (No estará en el producto final)
+            </span>
+          </div>
+          <p class="proto-only-note">
+            <strong>Nota para revisión de equipo:</strong> Este bloque de ingreso rápido existe únicamente en el prototipo para alternar en segundos entre los dos roles sin tipear claves. En producción se retira por completo.
+          </p>
+
+          <div class="row g-2">
+            <div class="col-sm-6">
+              <button
+                type="button"
+                class="btn btn-sm bg-white w-100 text-start p-2 border shadow-sm d-flex justify-content-between align-items-center"
+                style="border-radius: 8px; border-color: #FECACA !important;"
+                onclick="quickLogin('20345678901', 'productor123')">
+                <div>
+                  <span class="d-block fw-bold text-dark" style="font-size: 0.82rem;">
+                    <i class="bi bi-tractor me-1"></i> Entrar como Productor
+                  </span>
+                  <span class="text-muted" style="font-size: 0.72rem;">CUIT 20345678901</span>
+                </div>
+                <i class="bi bi-box-arrow-in-right text-danger fs-5"></i>
+              </button>
+            </div>
+
+            <div class="col-sm-6">
+              <button
+                type="button"
+                class="btn btn-sm bg-white w-100 text-start p-2 border shadow-sm d-flex justify-content-between align-items-center"
+                style="border-radius: 8px; border-color: #FECACA !important;"
+                onclick="quickLogin('30554433221', 'empresa123')">
+                <div>
+                  <span class="d-block fw-bold text-dark" style="font-size: 0.82rem;">
+                    <i class="bi bi-building-gear me-1"></i> Entrar como Acopio
+                  </span>
+                  <span class="text-muted" style="font-size: 0.72rem;">Cooperativa Jujuy</span>
+                </div>
+                <i class="bi bi-box-arrow-in-right text-danger fs-5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function quickLogin(usuario, clave) {
+    const idInput = document.getElementById('{{ form.identificador.id_for_label }}');
+    const pwdInput = document.getElementById('{{ form.password.id_for_label }}');
+    const form = document.getElementById('loginMainForm');
+    if (idInput && pwdInput && form) {
+      idInput.value = usuario;
+      pwdInput.value = clave;
+      form.submit();
+    }
+  }
+</script>
+{% endblock %}
