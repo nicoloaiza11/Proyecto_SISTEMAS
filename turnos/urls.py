@@ -4,7 +4,10 @@ from . import views
 app_name = 'turnos'
 
 urlpatterns = [
-    # Productor: Solicitud, salida de finca, comprobante y tablero de decisiones
+    # Productor: Lista de turnos asignados, histórico, solicitud, salida de finca, comprobante y tablero
+    path('turnos/mis-turnos/', views.mis_turnos_productor_view, name='mis_turnos'),
+    path('turnos/registros-historicos/', views.registros_historicos_view, name='registros_historicos'),
+    path('turnos/historial/', views.registros_historicos_view, name='historial_turnos'),
     path('turnos/solicitar/', views.solicitar_turno_view, name='solicitar_turno'),
     path('turnos/turno/<int:turno_id>/informar-salida/', views.informar_salida_view, name='informar_salida'),
     path('turnos/comprobante/<str:codigo>/', views.comprobante_view, name='comprobante'),

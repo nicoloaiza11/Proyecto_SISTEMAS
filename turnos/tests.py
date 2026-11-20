@@ -182,5 +182,60 @@ class CuposYTurnosTestCase(TestCase):
         resp_comprobante = self.client.get(f'/turnos/comprobante/{turno.codigo}/')
         self.assertEqual(resp_comprobante.status_code, 200)
 
+    def test_vistas_mis_turnos_y_registros_historicos(self):
+        """
+        Verifica que:
+        - /turnos/mis-turnos/ muestre mensaje amigable cuando no hay turnos activos.
+        - /turnos/mis-turnos/ con turnos activos muestre únicamente el turno activo y el botón a registros históricos.
+        - /turnos/registros-historicos/ contenga los KPIs y la tabla histórica.
+        """
+        self.client.force_login(self.productor)
+
+        # 1. Sin turnos activos: debe mostrar el texto exacto pedido
+        resp_vacio = self.client.get('/turnos/mis-turnos/')
+        self.assertEqual(resp_vacio.status_code, 200)
+        self.assertContains(resp_vacio, 'Mis Turnos Asignados')
+        self.assertContains(resp_vacio, 'No hay turnos asignados. Para solicitar un turno presione en "Solicitar Turno"')
+        self.assertContains(resp_vacio, 'Registros Históricos')
+        # No debe contener las tarjetas KPI acumuladas
+        self.assertNotContains(resp_vacio, 'Total Turnos Asignados')
+        self.assertNotContains(resp_vacio, 'Descargas Completadas')
+
+        # 2. Creamos un turno activo
+        turno_activo = services.validar_y_crear_turno(
+            productor=self.productor,
+            empresa=self.empresa,
+            kilos_estimados=12000,
+            patente_vehiculo="AA999ZZ",
+            fecha_entrega=self.fecha,
+            franja_horaria="10:00 - 12:00"
+        )
+
+        resp_con_turno = self.client.get('/turnos/mis-turnos/')
+        self.assertEqual(resp_con_turno.status_code, 200)
+        self.assertContains(resp_con_turno, 'Mis Turnos Asignados')
+        self.assertContains(resp_con_turno, turno_activo.codigo)
+        self.assertContains(resp_con_turno, 'Registros Históricos')
+        self.assertContains(resp_con_turno, 'Aviso Climático')
+        # Se removió la columna Vehículo de la tabla activa
+        self.assertNotContains(resp_con_turno, '<th scope="col">Vehículo</th>')
+        # Sigue sin mostrar los KPIs históricos
+        self.assertNotContains(resp_con_turno, 'Total Turnos Asignados')
+        self.assertNotContains(resp_con_turno, 'Descargas Completadas')
+
+        # 3. Vista de registros históricos
+        resp_hist = self.client.get('/turnos/registros-historicos/')
+        self.assertEqual(resp_hist.status_code, 200)
+        self.assertContains(resp_hist, 'Registros Históricos de Turnos')
+        self.assertContains(resp_hist, 'Total Turnos Asignados')
+        self.assertContains(resp_hist, 'Descargas Completadas')
+        self.assertContains(resp_hist, 'Volumen Total Declarado')
+        self.assertContains(resp_hist, turno_activo.codigo)
+
+        # 4. Alias de ruta /turnos/historial/
+        resp_alias = self.client.get('/turnos/historial/')
+        self.assertEqual(resp_alias.status_code, 200)
+
+
 
 

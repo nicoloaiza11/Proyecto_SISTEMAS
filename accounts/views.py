@@ -39,9 +39,9 @@ def empresa_required(view_func):
             return view_func(request, *args, **kwargs)
         messages.warning(
             request,
-            "Su perfil no tiene permisos de Empresa de Acopio. Ha sido redirigido al portal de turnos."
+            "Su perfil no tiene permisos de Empresa de Acopio. Ha sido redirigido a sus turnos."
         )
-        return redirect('turnos:solicitar_turno')
+        return redirect('turnos:mis_turnos')
     return _wrapped_view
 
 
@@ -73,18 +73,18 @@ def login_view(request):
 def login_redirect_view(request):
     """
     Redirige al usuario a la vista correspondiente según su rol:
-    - 'productor' -> 'solicitar-turno'
+    - 'productor' -> 'turnos:mis_turnos' (pantalla previa con turnos asignados y botón a reservar)
     - 'empresa' -> 'panel-empresa'
     """
     if request.user.rol == CustomUser.ROL_PRODUCTOR:
-        return redirect('turnos:solicitar_turno')
+        return redirect('turnos:mis_turnos')
     elif request.user.rol == CustomUser.ROL_EMPRESA:
         return redirect('turnos:panel_empresa')
     elif request.user.is_superuser:
         # Administrador general: acceso prioritario al panel de acopio
         return redirect('turnos:panel_empresa')
     
-    return redirect('turnos:solicitar_turno')
+    return redirect('turnos:mis_turnos')
 
 
 def logout_view(request):
