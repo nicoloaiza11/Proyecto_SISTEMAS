@@ -16,6 +16,64 @@ from . import analytics
 
 
 @productor_required
+def mis_turnos_productor_view(request):
+    """
+    Vista principal para el productor tabacalero:
+    Muestra únicamente sus turnos activos disponibles (CONFIRMADO, EN_PLAYA)
+    o el mensaje indicando que no hay turnos asignados con acceso a solicitar turno.
+    Toda la información acumulada (KPIs) y el historial completo se visualiza en registros_historicos_view.
+    """
+    turnos_activos = Turno.objects.filter(
+        productor=request.user,
+        estado__in=[Turno.ESTADO_CONFIRMADO, Turno.ESTADO_EN_PLAYA]
+    ).select_related('empresa').order_by('fecha_entrega', 'franja_horaria', 'creado_el')
+
+    context = {
+        'turnos': turnos_activos,
+        'turnos_activos': turnos_activos,
+    }
+    return render(request, 'turnos/mis_turnos.html', context)
+
+
+@productor_required
+def registros_historicos_view(request):
+    """
+    Panel / Registros históricos de turnos del productor:
+    Muestra métricas KPI acumuladas (total turnos asignados, turnos activos,
+    descargas completadas, volumen total declarado), filtros por estado y
+    toda la tabla con el histórico de turnos.
+    """
+    estado_filtro = request.GET.get('estado', '').strip()
+
+    base_query = Turno.objects.filter(
+        productor=request.user
+    ).select_related('empresa')
+
+    if estado_filtro and estado_filtro in dict(Turno.ESTADOS_CHOICES):
+        turnos = base_query.filter(estado=estado_filtro).order_by('-fecha_entrega', '-creado_el')
+    else:
+        turnos = base_query.order_by('-fecha_entrega', '-creado_el')
+
+    total_turnos = base_query.count()
+    turnos_activos = base_query.filter(
+        estado__in=[Turno.ESTADO_CONFIRMADO, Turno.ESTADO_EN_PLAYA]
+    ).count()
+    turnos_descargados = base_query.filter(estado=Turno.ESTADO_DESCARGADO).count()
+    kilos_totales = base_query.aggregate(total=Sum('kilos_estimados'))['total'] or 0
+
+    context = {
+        'turnos': turnos,
+        'total_turnos': total_turnos,
+        'turnos_activos': turnos_activos,
+        'turnos_descargados': turnos_descargados,
+        'kilos_totales': kilos_totales,
+        'estado_filtro': estado_filtro,
+        'estados_choices': Turno.ESTADOS_CHOICES,
+    }
+    return render(request, 'turnos/registros_historicos.html', context)
+
+
+@productor_required
 def solicitar_turno_view(request):
     """
     Vista del formulario para que el productor tabacalero reserve un turno de entrega.
@@ -97,7 +155,7 @@ def informar_salida_view(request, turno_id):
     next_url = request.POST.get('next')
     if next_url:
         return redirect(next_url)
-    return redirect('turnos:solicitar_turno')
+    return redirect('turnos:mis_turnos')
 
 
 @login_required
