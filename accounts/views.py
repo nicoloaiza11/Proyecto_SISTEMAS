@@ -89,9 +89,8 @@ def login_redirect_view(request):
 
 def logout_view(request):
     """
-    Cierra la sesión y redirige al login con confirmación visual.
+    Cierra la sesión y redirige al login sin mensajes que desfasen la pantalla.
     """
     logout(request)
-    messages.info(request, "Ha cerrado su sesión correctamente.")
     return redirect('login')
 

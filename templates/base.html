@@ -125,8 +125,9 @@
   </nav>
 
   <!-- Notificaciones del Sistema -->
-  <div class="container-fluid px-lg-4 mt-3">
-    {% if messages %}
+  {% block messages %}
+  {% if messages %}
+    <div class="container-fluid px-lg-4 mt-3">
       {% for message in messages %}
         <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'warning' %}warning{% elif message.tags == 'success' %}success{% else %}info{% endif %} alert-dismissible fade show shadow-sm mb-2" role="alert" style="border-radius: 10px;">
           <div class="d-flex align-items-center gap-2">
@@ -144,11 +145,12 @@
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
         </div>
       {% endfor %}
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
+  {% endblock %}
 
   <!-- Contenido Dinámico -->
-  <main class="flex-grow-1 py-4">
+  <main class="{% block main_class %}flex-grow-1 py-4{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 

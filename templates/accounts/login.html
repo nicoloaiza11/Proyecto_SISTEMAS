@@ -1,189 +1,414 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Acceso Operativo · SOLTAT{% endblock %}
+{% block title %}Identificación de Usuario · SOLTAT{% endblock %}
+
+{% block messages %}{% endblock %}
+
+{% block main_class %}p-0 m-0{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Ocultar barra superior y pie institucional para diseño a pantalla completa */
+  nav.navbar-soltat,
+  footer.footer-soltat {
+    display: none !important;
+  }
+
+  /* Reset estricto sobre el tag main para anular py-4 y flex-grow-1 */
+  main,
+  main.py-4,
+  body main {
+    padding: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin: 0 !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  html,
+  body {
+    background-color: #F7F5EE !important;
+    background-image: none !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-family: 'Roboto', sans-serif;
+  }
+
+  /* -------------------------------------------------------------
+     1. CONTENEDOR PRINCIPAL EN CAPAS (SIN SCROLL NI ESPACIO EN BLANCO)
+     ------------------------------------------------------------- */
+  .login-page-viewport {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    max-height: 100vh;
+    display: flex;
+    background-color: #F7F5EE;
+    overflow: hidden;
+  }
+
+  /* -------------------------------------------------------------
+     2. CARRUSEL CON DIFUMINADO (CROSSFADE) A LA IZQUIERDA (35% ANCHO)
+     ------------------------------------------------------------- */
+  .login-carousel-pane {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 35%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 1;
+  }
+
+  .carousel-slide {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+    pointer-events: none;
+  }
+
+  .carousel-slide.active {
+    opacity: 1;
+  }
+
+  /* Degradado horizontal que funde la foto con el fondo crema #F7F5EE */
+  .carousel-fade-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, transparent 60%, #F7F5EE 100%);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* -------------------------------------------------------------
+     3. ONDAS VECTORIALES INFERIORES (SVG DECORATIVO - Z-INDEX: 3)
+     ------------------------------------------------------------- */
+  .login-waves-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 230px;
+    pointer-events: none;
+    z-index: 3;
+    overflow: hidden;
+  }
+
+  .login-waves-svg {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* -------------------------------------------------------------
+     4. SECCIÓN DE LOGIN (LOS DOS TERCIOS SOBRANTES: 65%)
+     ------------------------------------------------------------- */
+  .login-content-section {
+    position: relative;
+    margin-left: 35%;
+    width: 65%;
+    height: 100vh;
+    max-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1.5rem 2rem 1.5rem;
+    z-index: 10;
+    overflow-y: auto;
+  }
+
+  /* -------------------------------------------------------------
+     5. TARJETA BLANCA DE IDENTIFICACIÓN DE USUARIO (Z-INDEX: 10)
+     ------------------------------------------------------------- */
+  .login-card {
+    background: #FFFFFF;
+    border-radius: 20px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08);
+    padding: 1.8rem 2rem 1.6rem 2rem;
+    width: 100%;
+    max-width: 440px;
+    position: relative;
+    z-index: 10;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+  }
+
+  .corp-plaque-card {
+    background-color: #FAF9F5;
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    border-left: 4px solid var(--color-accent);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-top: 1px solid #ECE7DD;
+    border-right: 1px solid #ECE7DD;
+    border-bottom: 1px solid #ECE7DD;
+  }
+
+  .corp-plaque-card img {
+    height: 34px;
+    width: auto;
+  }
+
+  /* Responsive para tablets y móviles */
+  @media (max-width: 991.98px) {
+    .login-carousel-pane {
+      display: none;
+    }
+
+    .login-content-section {
+      margin-left: 0;
+      width: 100%;
+      padding: 2rem 1.25rem;
+    }
+
+    .login-waves-container {
+      height: 180px;
+    }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container py-3 py-lg-4">
+<div class="login-page-viewport">
 
-  <div class="login-shell">
-    <div class="row g-0">
+  <!-- =========================================================================
+       CAPA 1: CARRUSEL CON DIFUMINADO (CROSSFADE) A LA IZQUIERDA (35% ANCHO)
+       Imágenes: IMG_carrousel_login, IMG_carrousel_login_2, IMG_carrousel_login_3
+       ========================================================================= -->
+  <div class="login-carousel-pane" aria-hidden="true">
+    <img class="carousel-slide active" src="{% static 'img/IMG_carrousel_login.webp' %}"
+      alt="Acopio y Producción Tabacalera 1">
+    <img class="carousel-slide" src="{% static 'img/IMG_carrousel_login_2.webp' %}"
+      alt="Acopio y Producción Tabacalera 2">
+    <img class="carousel-slide" src="{% static 'img/IMG_carrousel_login_3.webp' %}"
+      alt="Acopio y Producción Tabacalera 3">
+    <!-- Degradado lineal horizontal que funde la foto suavemente con el fondo crema -->
+    <div class="carousel-fade-overlay"></div>
+  </div>
 
-      <!-- Panel Izquierdo: Identidad Operativa SOLTAT + Firma 3B Systems -->
-      <div class="col-lg-5 login-brand-panel">
-        <div>
-          <span class="badge mb-3 px-3 py-2" style="background: rgba(214,168,79,0.18); color: var(--color-accent); border: 1px solid rgba(214,168,79,0.4); font-family: 'Montserrat', sans-serif; font-size: 0.72rem; letter-spacing: 0.08em;">
-            CAMPAÑA TABACALERA 2026
-          </span>
-          <h1 class="h2 text-white mb-2" style="font-family: 'Montserrat', sans-serif;">
-            SOLTAT
-          </h1>
-          <p class="text-white-50 mb-4" style="font-size: 0.94rem; line-height: 1.55;">
-            Coordinación digital entre productores y centros de acopio para ordenar el ingreso de cargas y proteger la capacidad operativa diaria.
-          </p>
+  <!-- =========================================================================
+       CAPA 2: ONDAS VECTORIALES INFERIORES (SVG DECORATIVO - Z-INDEX: 3)
+       Tres capas superpuestas: #164A2C, #3B6E3C y cinta dorada #C29B40
+       Ilustración sutil de hoja de tabaco con nervaduras en verde más claro
+       ========================================================================= -->
+  <div class="login-waves-container" aria-hidden="true">
+    <svg viewBox="0 0 1440 280" preserveAspectRatio="none" class="login-waves-svg" xmlns="http://www.w3.org/2000/svg">
+      <!-- 1. Cinta delgada dorada/ocre (#C29B40) bordeando la cresta superior -->
+      <path
+        d="M 0 156 C 260 156, 420 211, 680 226 C 940 241, 1160 181, 1440 81 L 1440 93 C 1160 193, 940 253, 680 238 C 420 223, 260 168, 0 168 Z"
+        fill="#C29B40" />
 
-          <div class="mt-4 pt-2">
-            <div class="login-pillar-item">
-              <div class="login-pillar-icon">
-                <i class="bi bi-shield-check"></i>
-              </div>
-              <div>
-                <div class="fw-bold text-white" style="font-size: 0.88rem;">Control Estricto de Cupo Diario</div>
-                <div class="text-white-50" style="font-size: 0.8rem;">Validación transaccional sobre el tope de 250.000 kg por planta.</div>
-              </div>
-            </div>
+      <!-- 2. Capa de verde medio (#3B6E3C) subyacente -->
+      <path d="M 0 168 C 260 168, 420 223, 680 238 C 940 253, 1160 193, 1440 93 L 1440 280 L 0 280 Z" fill="#3B6E3C" />
 
-            <div class="login-pillar-item">
-              <div class="login-pillar-icon">
-                <i class="bi bi-clock-history"></i>
-              </div>
-              <div>
-                <div class="fw-bold text-white" style="font-size: 0.88rem;">Bandas Horarias de 2 Horas</div>
-                <div class="text-white-50" style="font-size: 0.8rem;">Asignación escalonada para evitar esperas prolongadas en ruta.</div>
-              </div>
-            </div>
+      <!-- 3. Capa base de verde bosque oscuro (#164A2C) -->
+      <path d="M 0 188 C 240 188, 440 238, 700 248 C 960 258, 1180 210, 1440 130 L 1440 280 L 0 280 Z" fill="#164A2C" />
 
-            <div class="login-pillar-item mb-0">
-              <div class="login-pillar-icon">
-                <i class="bi bi-truck"></i>
-              </div>
-              <div>
-                <div class="fw-bold text-white" style="font-size: 0.88rem;">Trazabilidad Garita → Báscula</div>
-                <div class="text-white-50" style="font-size: 0.8rem;">Monitoreo en vivo de unidades en espera, en playón y descargadas.</div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <!-- 4. Ilustración vectorial sutil de hoja de tabaco con nervaduras en verde más claro -->
+      <g class="tobacco-leaf-decorative" transform="translate(1315, 205) rotate(-28)">
+        <path d="M 0 -68 C 24 -44, 38 12, 0 68 C -38 12, -24 -44, 0 -68 Z" fill="#1C5333" stroke="#3D7D50"
+          stroke-width="2" />
+        <path d="M 0 -64 Q 1 0 0 76" stroke="#7AC283" stroke-width="2.5" stroke-linecap="round" fill="none" />
+        <path d="M 0 -44 Q 12 -38 20 -33" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 -44 Q -12 -38 -20 -33" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 -20 Q 18 -14 26 -6" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 -20 Q -18 -14 -26 -6" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 8 Q 18 16 24 26" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 8 Q -18 16 -24 26" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 36 Q 12 43 16 50" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+        <path d="M 0 36 Q -12 43 -16 50" stroke="#8FD498" stroke-width="1.6" stroke-linecap="round" fill="none"
+          opacity="0.85" />
+      </g>
+    </svg>
+  </div>
 
-        <!-- Placa Distintiva de la Empresa Desarrolladora (3B Systems) -->
-        <div class="mt-4 pt-3">
-          <div class="corp-plaque-card">
-            <div>
-              <span class="d-block text-uppercase fw-bold" style="font-size: 0.63rem; letter-spacing: 0.09em; color: var(--color-text-muted);">
-                Solución desarrollada por
-              </span>
-              <span class="fw-bold" style="font-size: 0.84rem; color: var(--color-primary); font-family: 'Montserrat', sans-serif;">
-                Ingeniería &amp; Software Agroindustrial
-              </span>
-            </div>
-            <img src="{% static 'img/logo_3b_full.png' %}" alt="Logo 3B Systems">
-          </div>
-        </div>
+  <!-- =========================================================================
+       CAPA 3: SECCIÓN DE LOGIN (LOS DOS TERCIOS SOBRANTES: 65%)
+       ========================================================================= -->
+  <div class="login-content-section">
+
+    <!-- Identidad SOLTAT Superior -->
+    <div class="text-center mb-3">
+      <h1 class="h2 mb-1 fw-bold"
+        style="font-family: 'Montserrat', sans-serif; color: var(--color-primary); letter-spacing: -0.02em;">
+        SOLTAT
+      </h1>
+      <p class="text-muted small mb-0" style="font-size: 0.85rem;">
+        Gestión Logística y Turnos de Acopio Tabacalero
+      </p>
+    </div>
+
+    <!-- Tarjeta blanca de Identificación de Usuario (z-index: 10, pasa por encima de las ondas) -->
+    <div class="login-card">
+
+      <!-- Encabezado resumido de la tarjeta -->
+      <div class="mb-3">
+        <h2 class="h5 mb-1 fw-bold text-dark" style="font-family: 'Montserrat', sans-serif;">
+          Identificación de Usuario
+        </h2>
+        <p class="text-muted small mb-0" style="font-size: 0.83rem;">
+          Ingrese con su CUIT/DNI registrado para acceder a su entorno de <strong>Productor</strong> o
+          <strong>Acopio</strong>.
+        </p>
       </div>
 
-      <!-- Panel Derecho: Formulario de Autenticación por Rol -->
-      <div class="col-lg-7 bg-white p-4 p-md-5 d-flex flex-column justify-content-center">
+      {% if form.non_field_errors %}
+      <div class="alert alert-danger py-2 px-3 small rounded-3 mb-3 d-flex align-items-center gap-2" role="alert">
+        <i class="bi bi-exclamation-circle-fill text-danger fs-5 flex-shrink-0"></i>
+        <div>
+          {% for error in form.non_field_errors %}
+          <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
-        <div class="mb-4">
-          <span class="section-eyebrow">Portal Unificado de Acceso</span>
-          <h2 class="h3 mb-1">Identificación de Usuario</h2>
-          <p class="text-muted small mb-0">
-            Ingrese con su CUIT/DNI registrado. El sistema abrirá automáticamente su entorno de <strong>Productor</strong> o <strong>Planta de Acopio</strong>.
-          </p>
+      <form method="post" action="{% url 'login' %}" id="loginMainForm" novalidate>
+        {% csrf_token %}
+
+        <!-- Campo CUIT / DNI o Identificador -->
+        <div class="mb-3">
+          <label for="{{ form.identificador.id_for_label }}" class="form-label small fw-semibold text-dark mb-1">
+            CUIT / DNI o Identificador
+          </label>
+          <div class="input-group">
+            <span class="input-group-text bg-white border-end-0"
+              style="border-color: var(--color-border); color: var(--color-primary);">
+              <i class="bi bi-person-vcard fs-5"></i>
+            </span>
+            {{ form.identificador }}
+          </div>
+          {% if form.identificador.errors %}
+          <div class="text-danger small mt-1 ps-1">{{ form.identificador.errors.0 }}</div>
+          {% endif %}
         </div>
 
-        {% if form.non_field_errors %}
-          <div class="alert alert-soltat-cupo-excedido mb-4 py-3 px-3 d-flex align-items-start gap-2" role="alert">
-            <i class="bi bi-exclamation-octagon-fill fs-5 text-danger flex-shrink-0 mt-1"></i>
-            <div>
-              {% for error in form.non_field_errors %}
-                <div class="fw-medium" style="font-size: 0.9rem;">{{ error }}</div>
-              {% endfor %}
-            </div>
+        <!-- Campo Clave de Acceso con toggle de visualización -->
+        <div class="mb-3">
+          <label for="{{ form.password.id_for_label }}" class="form-label small fw-semibold text-dark mb-1">
+            Clave de Acceso
+          </label>
+          <div class="input-group">
+            <span class="input-group-text bg-white border-end-0"
+              style="border-color: var(--color-border); color: var(--color-primary);">
+              <i class="bi bi-key fs-5"></i>
+            </span>
+            {{ form.password }}
+            <button type="button" class="btn btn-outline-secondary border-start-0 bg-white" id="btnTogglePassword"
+              style="border-color: var(--color-border);" title="Mostrar u ocultar clave"
+              aria-label="Mostrar u ocultar clave">
+              <i class="bi bi-eye" id="togglePasswordIcon"></i>
+            </button>
           </div>
-        {% endif %}
+          {% if form.password.errors %}
+          <div class="text-danger small mt-1 ps-1">{{ form.password.errors.0 }}</div>
+          {% endif %}
+        </div>
 
-        <form method="post" action="{% url 'login' %}" id="loginMainForm" novalidate>
-          {% csrf_token %}
+        <!-- Botón Ingresar -->
+        <button type="submit"
+          class="btn btn-primary-soltat w-100 py-2 d-flex align-items-center justify-content-center gap-2 fw-bold shadow-sm"
+          style="font-size: 0.98rem; border-radius: 10px;">
+          <span>Ingresar al Sistema</span>
+          <i class="bi bi-arrow-right fs-5"></i>
+        </button>
+      </form>
 
-          <div class="mb-3">
-            <label for="{{ form.identificador.id_for_label }}" class="form-label">
-              CUIT / DNI o Identificador
-            </label>
-            <div class="input-group">
-              <span class="input-group-text bg-white border-end-0" style="border-color: var(--color-border); color: var(--color-primary);">
-                <i class="bi bi-person-vcard"></i>
-              </span>
-              {{ form.identificador }}
-            </div>
-            {% if form.identificador.errors %}
-              <div class="text-danger small mt-1">{{ form.identificador.errors.0 }}</div>
-            {% endif %}
-            <div class="form-text small">Ingrese los números sin guiones ni puntos (ej. <code>20345678901</code>).</div>
-          </div>
-
-          <div class="mb-4">
-            <label for="{{ form.password.id_for_label }}" class="form-label">
-              Clave de Acceso
-            </label>
-            <div class="input-group">
-              <span class="input-group-text bg-white border-end-0" style="border-color: var(--color-border); color: var(--color-primary);">
-                <i class="bi bi-key"></i>
-              </span>
-              {{ form.password }}
-            </div>
-            {% if form.password.errors %}
-              <div class="text-danger small mt-1">{{ form.password.errors.0 }}</div>
-            {% endif %}
-          </div>
-
-          <button type="submit" class="btn btn-primary-soltat w-100 py-3 d-flex align-items-center justify-content-center gap-2">
-            <span>Ingresar al Sistema</span>
-            <i class="bi bi-arrow-right"></i>
-          </button>
-        </form>
-
-        <!-- =================================================================
-             APARTADO TEMPORAL MARCADO EN ROJO (NO ESTARÁ EN EL PRODUCTO FINAL)
-             ================================================================= -->
-        <div class="proto-only-box mt-4">
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-1">
-            <span class="proto-only-tag">
-              <i class="bi bi-cone-striped"></i>
-              Temporal · Solo Demo Interna (No estará en el producto final)
+      <!-- Placa Distintiva de la Empresa Desarrolladora (3B Systems) -->
+      <div class="mt-3">
+        <div class="corp-plaque-card">
+          <div>
+            <span class="d-block text-uppercase fw-bold"
+              style="font-size: 0.63rem; letter-spacing: 0.08em; color: var(--color-text-muted);">
+              Solución desarrollada por
+            </span>
+            <span class="fw-bold"
+              style="font-size: 0.82rem; color: var(--color-primary); font-family: 'Montserrat', sans-serif;">
+              Ingeniería &amp; Software Agroindustrial
             </span>
           </div>
-          <p class="proto-only-note">
-            <strong>Nota para revisión de equipo:</strong> Este bloque de ingreso rápido existe únicamente en el prototipo para alternar en segundos entre los dos roles sin tipear claves. En producción se retira por completo.
-          </p>
+          <img src="{% static 'img/logo_3b_full.png' %}" alt="Logo 3B Systems">
+        </div>
+      </div>
 
-          <div class="row g-2">
-            <div class="col-sm-6">
-              <button
-                type="button"
-                class="btn btn-sm bg-white w-100 text-start p-2 border shadow-sm d-flex justify-content-between align-items-center"
-                style="border-radius: 8px; border-color: #FECACA !important;"
-                onclick="quickLogin('20345678901', 'productor123')">
-                <div>
-                  <span class="d-block fw-bold text-dark" style="font-size: 0.82rem;">
-                    <i class="bi bi-tractor me-1"></i> Entrar como Productor
-                  </span>
-                  <span class="text-muted" style="font-size: 0.72rem;">CUIT 20345678901</span>
-                </div>
-                <i class="bi bi-box-arrow-in-right text-danger fs-5"></i>
-              </button>
-            </div>
+      <!-- =================================================================
+           APARTADO TEMPORAL MARCADO EN ROJO (NO ESTARÁ EN EL PRODUCTO FINAL)
+           ================================================================= -->
+      <div class="proto-only-box mt-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-1">
+          <span class="proto-only-tag">
+            <i class="bi bi-cone-striped"></i>
+            Temporal · Solo Demo Interna (No estará en el producto final)
+          </span>
+        </div>
+        <p class="proto-only-note mb-2" style="font-size: 0.74rem;">
+          <strong>Nota para revisión de equipo:</strong> Este bloque de ingreso rápido existe únicamente en el prototipo
+          para alternar en segundos entre los dos roles sin tipear claves. En producción se retira por completo.
+        </p>
 
-            <div class="col-sm-6">
-              <button
-                type="button"
-                class="btn btn-sm bg-white w-100 text-start p-2 border shadow-sm d-flex justify-content-between align-items-center"
-                style="border-radius: 8px; border-color: #FECACA !important;"
-                onclick="quickLogin('30554433221', 'empresa123')">
-                <div>
-                  <span class="d-block fw-bold text-dark" style="font-size: 0.82rem;">
-                    <i class="bi bi-building-gear me-1"></i> Entrar como Acopio
-                  </span>
-                  <span class="text-muted" style="font-size: 0.72rem;">Cooperativa Jujuy</span>
-                </div>
-                <i class="bi bi-box-arrow-in-right text-danger fs-5"></i>
-              </button>
-            </div>
+        <div class="row g-2">
+          <div class="col-6">
+            <button type="button"
+              class="btn btn-sm bg-white w-100 text-start p-2 border shadow-sm d-flex justify-content-between align-items-center"
+              style="border-radius: 8px; border-color: #FECACA !important;"
+              onclick="quickLogin('20345678901', 'productor123')">
+              <div>
+                <span class="d-block fw-bold text-dark" style="font-size: 0.78rem;">
+                  <i class="bi bi-tractor me-1 text-success"></i> Entrar como Productor
+                </span>
+                <span class="text-muted" style="font-size: 0.68rem;">CUIT 20345678901</span>
+              </div>
+              <i class="bi bi-box-arrow-in-right text-danger fs-5"></i>
+            </button>
+          </div>
+
+          <div class="col-6">
+            <button type="button"
+              class="btn btn-sm bg-white w-100 text-start p-2 border shadow-sm d-flex justify-content-between align-items-center"
+              style="border-radius: 8px; border-color: #FECACA !important;"
+              onclick="quickLogin('30554433221', 'empresa123')">
+              <div>
+                <span class="d-block fw-bold text-dark" style="font-size: 0.78rem;">
+                  <i class="bi bi-building-gear me-1 text-primary"></i> Entrar como Acopio
+                </span>
+                <span class="text-muted" style="font-size: 0.68rem;">Cooperativa Jujuy</span>
+              </div>
+              <i class="bi bi-box-arrow-in-right text-danger fs-5"></i>
+            </button>
           </div>
         </div>
-
       </div>
+
     </div>
+
   </div>
 
 </div>
@@ -191,6 +416,39 @@
 
 {% block extra_js %}
 <script>
+  // 1. Carrusel automático con difuminado suave (crossfade) cada 5 segundos
+  document.addEventListener('DOMContentLoaded', function () {
+    const slides = document.querySelectorAll('.login-carousel-pane .carousel-slide');
+    if (slides.length > 1) {
+      let currentIndex = 0;
+      setInterval(function () {
+        slides[currentIndex].classList.remove('active');
+        currentIndex = (currentIndex + 1) % slides.length;
+        slides[currentIndex].classList.add('active');
+      }, 5000);
+    }
+
+    // 2. Mostrar / ocultar contraseña al presionar el ícono de ojo
+    const toggleBtn = document.getElementById('btnTogglePassword');
+    const pwdInput = document.getElementById('{{ form.password.id_for_label }}');
+    const toggleIcon = document.getElementById('togglePasswordIcon');
+
+    if (toggleBtn && pwdInput && toggleIcon) {
+      toggleBtn.addEventListener('click', function () {
+        if (pwdInput.type === 'password') {
+          pwdInput.type = 'text';
+          toggleIcon.classList.remove('bi-eye');
+          toggleIcon.classList.add('bi-eye-slash');
+        } else {
+          pwdInput.type = 'password';
+          toggleIcon.classList.remove('bi-eye-slash');
+          toggleIcon.classList.add('bi-eye');
+        }
+      });
+    }
+  });
+
+  // 3. Inicio de sesión rápido para demostración
   function quickLogin(usuario, clave) {
     const idInput = document.getElementById('{{ form.identificador.id_for_label }}');
     const pwdInput = document.getElementById('{{ form.password.id_for_label }}');
