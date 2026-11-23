@@ -59,8 +59,18 @@
           {% if user.is_authenticated %}
             {% if user.es_productor or user.is_superuser %}
               <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'mis_turnos' %}active{% endif %}" href="{% url 'turnos:mis_turnos' %}">
+                  <i class="bi bi-calendar-check me-1"></i> Mis Turnos
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'registros_historicos' or request.resolver_match.url_name == 'historial_turnos' %}active{% endif %}" href="{% url 'turnos:registros_historicos' %}">
+                  <i class="bi bi-clock-history me-1"></i> Registros Históricos
+                </a>
+              </li>
+              <li class="nav-item">
                 <a class="nav-link {% if request.resolver_match.url_name == 'solicitar_turno' %}active{% endif %}" href="{% url 'turnos:solicitar_turno' %}">
-                  <i class="bi bi-calendar2-check me-1"></i> Reserva de Descarga
+                  <i class="bi bi-calendar2-plus me-1"></i> Reservar Turno
                 </a>
               </li>
               <li class="nav-item">
@@ -115,8 +125,9 @@
   </nav>
 
   <!-- Notificaciones del Sistema -->
-  <div class="container-fluid px-lg-4 mt-3">
-    {% if messages %}
+  {% block messages %}
+  {% if messages %}
+    <div class="container-fluid px-lg-4 mt-3">
       {% for message in messages %}
         <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'warning' %}warning{% elif message.tags == 'success' %}success{% else %}info{% endif %} alert-dismissible fade show shadow-sm mb-2" role="alert" style="border-radius: 10px;">
           <div class="d-flex align-items-center gap-2">
@@ -134,11 +145,12 @@
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
         </div>
       {% endfor %}
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
+  {% endblock %}
 
   <!-- Contenido Dinámico -->
-  <main class="flex-grow-1 py-4">
+  <main class="{% block main_class %}flex-grow-1 py-4{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 

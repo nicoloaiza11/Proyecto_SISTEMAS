@@ -235,6 +235,11 @@ class Turno(models.Model):
         desvio = self.minutos_desvio_arribo
         return desvio is not None and desvio <= DURACION_FRANJA_MIN
 
+    @property
+    def kilos_efectivos(self):
+        """Kilos reales si ya fue pesado en báscula, o estimados si está pendiente."""
+        return self.kilos_reales if self.kilos_reales is not None else self.kilos_estimados
+
     # ------------------------------------------------------------------
     # Métricas comerciales
     # ------------------------------------------------------------------
