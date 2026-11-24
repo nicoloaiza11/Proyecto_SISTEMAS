@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Solicitudes y Turnos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4 pb-5">
+
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end mb-4 gap-3">
+    <div>
+      <span class="section-eyebrow"><i class="bi bi-inboxes me-1"></i> Recorredor · {{ empresa.nombre }}</span>
+      <h1 class="h2 mb-1">Solicitudes y Turnos</h1>
+      <p class="text-muted small mb-0">Confirme o rechace los turnos que piden los productores, y asigne turnos nuevos.</p>
+    </div>
+    <a href="{% url 'turnos:asignar_turno' %}" class="btn btn-primary-soltat"><i class="bi bi-calendar2-plus me-1"></i> Asignar turno</a>
+  </div>
+
+  <h2 class="h5 fw-bold mb-2">Pendientes de confirmación <span class="badge bg-warning-subtle text-warning-emphasis">{{ pendientes|length }}</span></h2>
+  <div class="card-soltat p-0 overflow-hidden shadow-sm mb-4">
+    <div class="table-responsive">
+      <table class="table table-soltat align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Código</th><th>Productor</th><th>Cumplimiento</th><th>Fecha y franja</th><th>Corte</th>
+            <th class="text-end">Kilos</th><th>Patente</th><th class="text-end">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in pendientes %}
+          <tr>
+            <td class="font-monospace fw-bold">{{ t.codigo }}</td>
+            <td>{{ t.productor.get_nombre_completo }}<span class="d-block text-muted small">{{ t.productor.cuit_dni }}</span></td>
+            <td><span class="badge bg-{{ t.cumplimiento.css }}-subtle text-{{ t.cumplimiento.css }} border border-{{ t.cumplimiento.css }}-subtle">{{ t.cumplimiento.nivel_display }}</span></td>
+            <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span><span class="d-block text-muted small">{{ t.franja_horaria }} hs</span></td>
+            <td>{{ t.get_corte_tabaco_display }}</td>
+            <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
+            <td class="font-monospace">{{ t.patente_vehiculo }}</td>
+            <td class="text-end">
+              <div class="d-flex justify-content-end gap-2">
+                <form method="post" action="{% url 'turnos:confirmar_turno' t.id %}" class="m-0">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-primary-soltat"><i class="bi bi-check2-circle me-1"></i>Confirmar</button>
+                </form>
+                <button class="btn btn-sm btn-outline-danger" type="button" data-bs-toggle="collapse" data-bs-target="#rechazo{{ t.id }}">
+                  <i class="bi bi-x-circle me-1"></i>Rechazar
+                </button>
+              </div>
+              <form method="post" action="{% url 'turnos:cancelar_turno_recorredor' t.id %}" class="collapse mt-2" id="rechazo{{ t.id }}">
+                {% csrf_token %}
+                <div class="input-group input-group-sm">
+                  <input type="text" name="mensaje" class="form-control" placeholder="Motivo (opcional)">
+                  <button class="btn btn-danger">Rechazar</button>
+                </div>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No hay solicitudes pendientes.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-8">
+      <h2 class="h5 fw-bold mb-2">Próximos turnos confirmados</h2>
+      <div class="card-soltat p-0 overflow-hidden shadow-sm">
+        <div class="table-responsive">
+          <table class="table table-soltat align-middle mb-0">
+            <thead><tr><th>Código</th><th>Productor</th><th>Fecha y franja</th><th>Corte</th><th class="text-end">Kilos</th><th class="text-end">Acciones</th></tr></thead>
+            <tbody>
+              {% for t in confirmados %}
+              <tr>
+                <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
+                <td>{{ t.productor.get_nombre_completo }}</td>
+                <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span></td>
+                <td>{{ t.get_corte_tabaco_display }}</td>
+                <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-danger" type="button" data-bs-toggle="collapse" data-bs-target="#cancela{{ t.id }}">Cancelar</button>
+                  <form method="post" action="{% url 'turnos:cancelar_turno_recorredor' t.id %}" class="collapse mt-2" id="cancela{{ t.id }}">
+                    {% csrf_token %}
+                    <div class="input-group input-group-sm">
+                      <input type="text" name="mensaje" class="form-control" placeholder="Motivo (opcional)">
+                      <button class="btn btn-danger">Cancelar turno</button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-4">No hay turnos confirmados próximos.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-4">
+      <h2 class="h5 fw-bold mb-2">Cupos que asignó</h2>
+      <div class="card-soltat p-3 shadow-sm">
+        {% for c in cupos %}
+          <div class="d-flex justify-content-between small py-1 border-bottom">
+            <span>{{ c.productor.get_nombre_completo }}</span>
+            <span class="tabular-nums">{{ c.cupo_maximo|intcomma }} kg</span>
+          </div>
+        {% empty %}
+          <p class="small text-muted mb-0">Todavía no asignó cupos. Los cupos se cargan desde Administración.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

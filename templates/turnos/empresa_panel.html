@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Ocupación y Convocatorias{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4 pb-5">
+
+  <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end mb-4 gap-3">
+    <div>
+      <span class="section-eyebrow"><i class="bi bi-building me-1"></i> {{ empresa.nombre }}</span>
+      <h1 class="h2 mb-1">Ocupación y Convocatorias</h1>
+      <p class="text-muted small mb-0">
+        Capacidad diaria {{ empresa.capacidad_diaria_kg|intcomma }} kg · {{ empresa.capacidad_franja_kg|intcomma }} kg por franja.
+        {% if pendientes %}<strong>{{ pendientes }} solicitud{{ pendientes|pluralize:"es" }} pendiente{{ pendientes|pluralize }}</strong> de confirmar por sus recorredores.{% endif %}
+      </p>
+    </div>
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <a href="?fecha={{ fecha_anterior }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-left"></i></a>
+      <input type="date" name="fecha" value="{{ fecha_iso }}" class="form-control form-control-sm" style="width: auto;" onchange="this.form.submit()">
+      <a href="?fecha={{ fecha_siguiente }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-right"></i></a>
+      {% if not es_hoy %}<a href="?fecha={{ hoy_iso }}" class="btn btn-sm btn-outline-soltat">Hoy</a>{% endif %}
+    </form>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-8">
+      <div class="card-soltat p-4 shadow-sm mb-4">
+        <div class="d-flex justify-content-between align-items-end mb-2">
+          <div>
+            <span class="text-muted small d-block">Ocupación del {{ fecha|date:"d/m/Y" }}</span>
+            <span class="h3 fw-bold tabular-nums">{{ disponibilidad.kilos_ocupados|intcomma }} kg</span>
+            <span class="text-muted">de {{ disponibilidad.capacidad_diaria|intcomma }} kg</span>
+          </div>
+          <span class="badge {% if disponibilidad.semaforo == 'completo' %}bg-danger{% elif disponibilidad.semaforo == 'alerta' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+            {{ disponibilidad.porcentaje_ocupacion }} %
+          </span>
+        </div>
+        <div class="progress mb-4" style="height: 10px;">
+          <div class="progress-bar" style="width: {{ disponibilidad.porcentaje_ocupacion|stringformat:'f' }}%; background-color: var(--color-primary);"></div>
+        </div>
+
+        <h2 class="h6 fw-bold">Por franja</h2>
+        {% for f in disponibilidad.franjas %}
+          <div class="small mb-2">
+            <div class="d-flex justify-content-between">
+              <span>{{ f.etiqueta }}</span>
+              <span class="tabular-nums">{{ f.ocupados|intcomma }} / {{ f.capacidad|intcomma }} kg</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar" style="width: {{ f.porcentaje }}%; background-color: {% if f.porcentaje >= 100 %}#C0392B{% elif f.porcentaje >= 80 %}#D6A84F{% else %}var(--color-primary){% endif %};"></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="card-soltat p-0 overflow-hidden shadow-sm">
+        <div class="table-responsive">
+          <table class="table table-soltat align-middle mb-0">
+            <thead><tr><th>Franja</th><th>Código</th><th>Productor</th><th>Corte</th><th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-center">Estado</th></tr></thead>
+            <tbody>
+              {% for t in turnos %}
+              <tr>
+                <td class="tabular-nums">{{ t.franja_horaria }}</td>
+                <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
+                <td>{{ t.productor.get_nombre_completo }}</td>
+                <td>{{ t.get_corte_tabaco_display }}</td>
+                <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }}</td>
+                <td class="text-end tabular-nums">{{ t.kilos_reales|default_if_none:"—"|intcomma }}</td>
+                <td class="text-center"><span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="text-center text-muted py-4">No hay turnos para esta fecha.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-4">
+      <div class="card-soltat p-4 shadow-sm">
+        <h2 class="h5 fw-bold mb-1"><i class="bi bi-megaphone me-1"></i> Nueva convocatoria</h2>
+        <p class="small text-muted">
+          Avise por WhatsApp a los productores con cupo qué corte busca recibir. No bloquea turnos de otros cortes.
+          {% if empresa.corte_solicitado %}<br>Corte de la última convocatoria: <strong>{{ empresa.get_corte_solicitado_display }}</strong>.{% endif %}
+        </p>
+        {% include 'turnos/_form_errors.html' %}
+        <form method="post">
+          {% csrf_token %}
+          {% include 'turnos/_field.html' with field=form.corte_tabaco %}
+          {% include 'turnos/_field.html' with field=form.kilos %}
+          {% include 'turnos/_field.html' with field=form.mensaje %}
+          <button class="btn btn-primary-soltat w-100"><i class="bi bi-whatsapp me-1"></i> Preparar avisos</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

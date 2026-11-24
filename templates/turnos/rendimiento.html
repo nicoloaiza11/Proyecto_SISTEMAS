@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Mi Rendimiento{% endblock %}
+
+{% block content %}
+<div class="container pb-5">
+  <div class="mb-4">
+    <span class="section-eyebrow"><i class="bi bi-bar-chart-line me-1"></i> Portal del Productor</span>
+    <h1 class="h2 mb-1">Mi Rendimiento</h1>
+    <p class="text-muted small mb-0">Resumen de sus entregas descargadas en báscula.</p>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="card-soltat p-3 shadow-sm h-100">
+      <span class="text-muted small d-block">Entregas descargadas</span>
+      <span class="h3 fw-bold tabular-nums">{{ total_entregas }}</span>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="card-soltat p-3 shadow-sm h-100">
+      <span class="text-muted small d-block">Kilos reales / estimados</span>
+      <span class="h5 fw-bold tabular-nums">{{ kilos_reales|intcomma }} / {{ kilos_estimados|intcomma }} kg</span>
+      {% if desvio_medio is not None %}<span class="d-block text-muted small">Desvío medio {{ desvio_medio|floatformat:1 }} %</span>{% endif %}
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="card-soltat p-3 shadow-sm h-100">
+      <span class="text-muted small d-block">Espera en planta / ciclo total</span>
+      <span class="h5 fw-bold tabular-nums">{{ espera_media|default:"—" }} / {{ ciclo_medio|default:"—" }} min</span>
+      <span class="d-block text-muted small">Promedios</span>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="card-soltat p-3 shadow-sm h-100">
+      <span class="text-muted small d-block">Presentismo</span>
+      <span class="h3 fw-bold tabular-nums">{% if presentismo is not None %}{{ presentismo }} %{% else %}—{% endif %}</span>
+      <span class="d-block text-muted small">{{ ausencias }} ausencia{{ ausencias|pluralize }}</span>
+    </div></div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">{% include 'turnos/_cumplimiento.html' %}</div>
+    <div class="col-md-6">{% include 'turnos/_cupos.html' %}</div>
+  </div>
+
+  <div class="card-soltat p-0 overflow-hidden shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-soltat align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Código</th><th>Empresa</th><th>Fecha</th><th>Corte</th>
+            <th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-end">Desvío</th>
+            <th class="text-end">Espera</th><th class="text-end">Ciclo total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in descargados %}
+          <tr>
+            <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
+            <td>{{ t.empresa.nombre }}</td>
+            <td class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</td>
+            <td>{{ t.get_corte_tabaco_display }}</td>
+            <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }}</td>
+            <td class="text-end tabular-nums">{{ t.kilos_reales|intcomma }}</td>
+            <td class="text-end tabular-nums">{{ t.desvio_pct|floatformat:1 }} %</td>
+            <td class="text-end tabular-nums">{{ t.calcular_tiempo_espera|default:"—" }} min</td>
+            <td class="text-end tabular-nums">{{ t.calcular_tiempo_ciclo_total|default:"—" }} min</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" class="text-center text-muted py-4">Todavía no tiene entregas descargadas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

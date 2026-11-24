@@ -1,12 +1,12 @@
 # SOLTAT (Sistema de Optimización Logística y Turnos de Acopio Tabacalero)
-Desarrollado para la optimización logística, control estricto de cupos de acopio y sistema de apoyo a la toma de decisiones (SAD) gerencial y de finca.  
+Sistema web de gestión de turnos y cupos para el centro de acopio tabacalero de Perico (Jujuy), compartido por la Cooperativa de Tabacaleros de Jujuy, Alliance One y Massalin Particulares.
 **Ingeniería & Desarrollo:** 3B SYSTEMS
 
 ---
 
-## 🚀 Puesta en marcha rápida (Para cualquier compañero de equipo)
+## 🚀 Puesta en marcha rápida
 
-El proyecto ya incluye la base de datos funcional preconfigurada (`db.sqlite3`) con el histórico de 191 movimientos y usuarios demo listos para usar.
+El proyecto incluye la base de datos `db.sqlite3` con datos de prueba y usuarios demo listos para usar.
 
 ### 1. Clonar el repositorio
 ```bash
@@ -36,28 +36,61 @@ pip install -r requirements.txt
 python manage.py runserver
 ```
 
-Abre en tu navegador: **`http://127.0.0.1:8000/`**
+Abrir en el navegador: **`http://127.0.0.1:8000/`**
 
 ---
 
-## 🔑 Accesos de prueba disponibles
+## 🔑 Usuarios de prueba
 
-- **Portal del Productor:**
-  - CUIT / DNI: `20345678901`
-  - Contraseña: `productor123`
-  - *Funciones:* Reserva de cupo, notificación de salida de finca y tablero de rendimiento agropecuario.
+Se ingresa con el DNI/CUIT (o el nombre de usuario) y la contraseña.
 
-- **Portal de Planta de Acopio (Cooperativa Jujuy):**
-  - CUIT / DNI: `30554433221`
-  - Contraseña: `empresa123`
-  - *Funciones:* Planilla en vivo de playa/báscula, control de capacidad diaria (250.000 kg) e Inteligencia Gerencial SAD.
+| Tipo de usuario | DNI / CUIT | Contraseña | Qué puede hacer |
+|---|---|---|---|
+| Productor (nivel bueno) | `20345678901` | `productor123` | Solicitar y cancelar turnos, ver comprobantes, historial y rendimiento |
+| Productor (nivel regular) | `20287654321` | `productor123` | Ídem; solo accede a franjas desde las 12:00 |
+| Productor (bloqueado) | `20312233445` | `productor123` | No puede solicitar turnos hasta que venza el bloqueo |
+| Recorredor (Cooperativa) | `20111111111` | `recorredor123` | Confirmar o rechazar solicitudes, asignar turnos |
+| Operador de acopio | `20222222222` | `operador123` | Registrar ingreso en garita, pesaje y descarga (todas las empresas) |
+| Empresa (Cooperativa) | `30554433221` | `empresa123` | Ver ocupación diaria y por franja, publicar convocatorias |
+| Administrador | `20000000001` | `admin123` | Gestionar usuarios, empresas y cupos en `/admin` |
+
+Hay también recorredores de Alliance One (`20111111112`) y Massalin (`20111111113`), y las empresas `30665544332` y `30776655443`, con las mismas contraseñas de su tipo.
 
 ---
 
-## 🗄️ Base de datos y arquitectura
-- **SQLite (por defecto para ejecución inmediata):** Ya viene poblada en `db.sqlite3`. Si deseas resembrar los datos desde cero:
+## 🧩 Modelo (según el diagrama de clases)
+
+- **Usuario** (`cuit_dni`, `telefono`) y sus subclases: **Productor**, **Recorredor** (con `empresa_asignada`), **OperadorAcopio**, **Administrador** y **EmpresaAcopio** (`nombre`, `capacidad_diaria_kg`, `capacidad_franja_kg`, `activa`, `corte_solicitado`).
+- **CupoProductor**: kilos totales que un productor puede entregar a una empresa en la temporada.
+- **Turno**: un solo **corte de tabaco** por turno (BAJERA, MEDIANA, SUPERIOR) y estado **PENDIENTE → CONFIRMADO → EN_PLAYA → DESCARGADO** (o CANCELADO).
+- **RegistroOperador**: pesaje en báscula (peso acordado, peso real, corte).
+- **Comprobante**: se emite al confirmar el turno; el operador completa el peso real y, si quiere, el precio por kg.
+
+## ⚙️ Reglas principales
+
+- **Turnos:** el productor los solicita y quedan PENDIENTES hasta que el recorredor de la empresa los confirma. Los que asigna el recorredor nacen CONFIRMADOS.
+- **Franjas:** 8 franjas de 2 horas, de 06:00 a 22:00. El sistema asigna la primera franja con lugar, respetando la capacidad por franja y la capacidad diaria de la empresa.
+- **Premios y castigos** (últimos 90 días). Cuentan como incumplimiento: no presentarse, cancelar un turno confirmado y un desvío de kilos mayor al 20 %.
+  - 0 incumplimientos: nivel **Bueno**, franjas desde las 06:00.
+  - 1: **Regular**, desde las 12:00.
+  - 2: **Malo**, desde las 18:00.
+  - 3 o más: **Bloqueado** por 30 días desde el último; solo el recorredor puede asignarle turnos.
+- **Avisos por WhatsApp:** el sistema arma el mensaje y un enlace `wa.me` con el número y el texto cargados; el usuario solo toca Enviar. Se usa en confirmaciones, cancelaciones y convocatorias.
+
+Los parámetros (90 días, 20 %, 30 días, horas por nivel) están al principio de `turnos/services.py`.
+
+---
+
+## 🗄️ Base de datos
+
+- **SQLite (por defecto):** ya viene cargada en `db.sqlite3`. Para volver a cargar los datos de prueba:
   ```bash
   python manage.py migrate
-  python manage.py seed_data
+  python manage.py seed_data --reset
   ```
-- **PostgreSQL 18:** El repositorio incluye el script DDL y de auditoría gerencial en `sql/pgadmin4_soltat.sql` listo para ejecutar en **pgAdmin 4**.
+- **PostgreSQL 18:** poner `DB_ENGINE=postgres` en el archivo `.env`, ejecutar `migrate` y `seed_data`. El script `sql/pgadmin4_soltat.sql` documenta el esquema e incluye consultas para pgAdmin 4 (ocupación, planilla de garita, cumplimiento y cupos).
+
+## ✅ Tests
+```bash
+python manage.py test turnos
+```

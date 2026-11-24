@@ -1,445 +1,375 @@
-import csv
-from datetime import date, datetime, timedelta
-from decimal import Decimal
-from django.db.models import Sum
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
+from datetime import datetime, timedelta
+
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponse
+from django.contrib.auth.decorators import login_required
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.views import productor_required, empresa_required
-from .models import Turno, EmpresaAcopio, CLASES_TABACO, PRECIOS_CLASE_USD
-from .forms import SolicitudTurnoForm
+from accounts.decorators import (
+    empresa_required, operador_required, productor_required, recorredor_required,
+)
+from accounts.models import EmpresaAcopio
 from . import services
-from . import analytics
+from .choices import CorteTabaco, EstadoTurno
+from .forms import AsignarTurnoForm, CancelacionForm, ConvocatoriaForm, SolicitudTurnoForm
+from .models import Turno
+from .whatsapp import armar_aviso
+
+ACTIVOS = [EstadoTurno.PENDIENTE, EstadoTurno.CONFIRMADO, EstadoTurno.EN_PLAYA]
 
 
+# ---------------------------------------------------------------------------
+# Utilidades
+# ---------------------------------------------------------------------------
+def _fecha_param(request):
+    try:
+        return datetime.strptime(request.GET.get('fecha', ''), '%Y-%m-%d').date()
+    except ValueError:
+        return timezone.localdate()
+
+
+def _contexto_fecha(fecha):
+    hoy = timezone.localdate()
+    return {
+        'fecha': fecha,
+        'fecha_iso': fecha.isoformat(),
+        'fecha_anterior': (fecha - timedelta(days=1)).isoformat(),
+        'fecha_siguiente': (fecha + timedelta(days=1)).isoformat(),
+        'hoy_iso': hoy.isoformat(),
+        'es_hoy': fecha == hoy,
+    }
+
+
+def _mostrar_avisos(request, avisos, titulo, volver):
+    """Guarda los avisos de WhatsApp en la sesión y lleva a la pantalla para enviarlos."""
+    if not avisos:
+        return redirect(volver)
+    request.session['avisos_whatsapp'] = {'titulo': titulo, 'avisos': avisos, 'volver': volver}
+    return redirect('turnos:avisos')
+
+
+def _volver(request, por_defecto):
+    destino = request.POST.get('next', '')
+    return destino if destino.startswith('/') else por_defecto
+
+
+# ---------------------------------------------------------------------------
+# Productor
+# ---------------------------------------------------------------------------
 @productor_required
 def mis_turnos_productor_view(request):
-    """
-    Vista principal para el productor tabacalero:
-    Muestra únicamente sus turnos activos disponibles (CONFIRMADO, EN_PLAYA)
-    o el mensaje indicando que no hay turnos asignados con acceso a solicitar turno.
-    Toda la información acumulada (KPIs) y el historial completo se visualiza en registros_historicos_view.
-    """
-    turnos_activos = Turno.objects.filter(
-        productor=request.user,
-        estado__in=[Turno.ESTADO_CONFIRMADO, Turno.ESTADO_EN_PLAYA]
-    ).select_related('empresa').order_by('fecha_entrega', 'franja_horaria', 'creado_el')
-
-    context = {
-        'turnos': turnos_activos,
-        'turnos_activos': turnos_activos,
-    }
-    return render(request, 'turnos/mis_turnos.html', context)
+    productor = request.perfil
+    turnos = productor.turnos.filter(estado__in=ACTIVOS).select_related('empresa')
+    return render(request, 'turnos/mis_turnos.html', {
+        'turnos': turnos,
+        'cumplimiento': services.evaluar_cumplimiento(productor),
+        'cupos': services.resumen_cupos(productor),
+    })
 
 
 @productor_required
 def registros_historicos_view(request):
-    """
-    Panel / Registros históricos de turnos del productor:
-    Muestra métricas KPI acumuladas (total turnos asignados, turnos activos,
-    descargas completadas, volumen total declarado), filtros por estado y
-    toda la tabla con el histórico de turnos.
-    """
-    estado_filtro = request.GET.get('estado', '').strip()
-
-    base_query = Turno.objects.filter(
-        productor=request.user
-    ).select_related('empresa')
-
-    if estado_filtro and estado_filtro in dict(Turno.ESTADOS_CHOICES):
-        turnos = base_query.filter(estado=estado_filtro).order_by('-fecha_entrega', '-creado_el')
-    else:
-        turnos = base_query.order_by('-fecha_entrega', '-creado_el')
-
-    total_turnos = base_query.count()
-    turnos_activos = base_query.filter(
-        estado__in=[Turno.ESTADO_CONFIRMADO, Turno.ESTADO_EN_PLAYA]
-    ).count()
-    turnos_descargados = base_query.filter(estado=Turno.ESTADO_DESCARGADO).count()
-    kilos_totales = base_query.aggregate(total=Sum('kilos_estimados'))['total'] or 0
-
-    context = {
-        'turnos': turnos,
-        'total_turnos': total_turnos,
-        'turnos_activos': turnos_activos,
-        'turnos_descargados': turnos_descargados,
-        'kilos_totales': kilos_totales,
-        'estado_filtro': estado_filtro,
-        'estados_choices': Turno.ESTADOS_CHOICES,
-    }
-    return render(request, 'turnos/registros_historicos.html', context)
+    productor = request.perfil
+    base = productor.turnos.select_related('empresa')
+    estado = request.GET.get('estado', '')
+    turnos = base.filter(estado=estado) if estado in EstadoTurno.values else base
+    return render(request, 'turnos/registros_historicos.html', {
+        'turnos': turnos.order_by('-fecha_entrega', '-id'),
+        'total_turnos': base.count(),
+        'turnos_activos': base.filter(estado__in=ACTIVOS).count(),
+        'turnos_descargados': base.filter(estado=EstadoTurno.DESCARGADO).count(),
+        'estado_filtro': estado,
+        'estados_choices': EstadoTurno.choices,
+    })
 
 
 @productor_required
 def solicitar_turno_view(request):
-    """
-    Vista del formulario para que el productor tabacalero reserve un turno de entrega.
-    Verifica de forma estricta los cupos diarios mediante services.validar_y_crear_turno.
-    """
-    cupo_error = None
+    productor = request.perfil
+    empresas = services.empresas_con_cupo(productor)
+    cumplimiento = services.evaluar_cumplimiento(productor)
+    form = SolicitudTurnoForm(request.POST or None, empresas=empresas,
+                              initial={'fecha_entrega': timezone.localdate()})
 
-    if request.method == 'POST':
-        form = SolicitudTurnoForm(request.POST)
-        if form.is_valid():
-            empresa = form.cleaned_data['empresa']
-            kilos_estimados = form.cleaned_data['kilos_estimados']
-            patente_vehiculo = form.cleaned_data['patente_vehiculo']
-            fecha_entrega = form.cleaned_data['fecha_entrega']
-            franja_horaria = form.cleaned_data['franja_horaria']
-            observaciones = form.cleaned_data.get('observaciones', '')
-
-            try:
-                turno = services.validar_y_crear_turno(
-                    productor=request.user,
-                    empresa=empresa,
-                    kilos_estimados=kilos_estimados,
-                    patente_vehiculo=patente_vehiculo,
-                    fecha_entrega=fecha_entrega,
-                    franja_horaria=franja_horaria,
-                    observaciones=observaciones
-                )
-                messages.success(
-                    request,
-                    f"¡Turno registrado con éxito! Código asignado: {turno.codigo}"
-                )
-                return redirect('turnos:comprobante', codigo=turno.codigo)
-
-            except services.CupoExcedidoException as ex:
-                cupo_error = {
-                    'mensaje': str(ex),
-                    'remanente': ex.remanente_disponible,
-                    'solicitados': ex.kilos_solicitados,
-                    'capacidad': ex.capacidad_maxima,
-                    'ocupados': ex.kilos_ocupados,
-                }
-                messages.error(
-                    request,
-                    f"No se pudo registrar el turno: El cupo diario está superado. Remanente disponible: {ex.remanente_disponible:,} kg."
-                )
-    else:
-        form = SolicitudTurnoForm(initial={'fecha_entrega': date.today()})
-
-    turnos_recientes = Turno.objects.filter(
-        productor=request.user
-    ).select_related('empresa').order_by('-fecha_entrega', '-creado_el')[:6]
-
-    context = {
-        'form': form,
-        'cupo_error': cupo_error,
-        'turnos_recientes': turnos_recientes,
-        'hoy': date.today().strftime('%Y-%m-%d'),
-    }
-    return render(request, 'turnos/solicitar_turno.html', context)
-
-
-@productor_required
-@require_POST
-def informar_salida_view(request, turno_id):
-    """
-    El productor registra que el camión salió de finca rumbo a la planta,
-    iniciando el cronómetro de recorrido (hora_salida_origen).
-    """
-    turno = get_object_or_404(Turno, id=turno_id)
-    try:
-        services.registrar_salida_origen(turno, request.user)
-        messages.success(
-            request,
-            f"Salida de finca registrada para el turno [{turno.codigo}]. Cronómetro de recorrido en curso."
-        )
-    except Exception as exc:
-        messages.error(request, str(exc))
-
-    next_url = request.POST.get('next')
-    if next_url:
-        return redirect(next_url)
-    return redirect('turnos:mis_turnos')
-
-
-@login_required
-def comprobante_view(request, codigo):
-    """
-    Muestra la confirmación, trazabilidad de tiempos y liquidación del turno.
-    """
-    if request.user.es_productor and not request.user.is_superuser:
-        turno = get_object_or_404(Turno, codigo=codigo, productor=request.user)
-    else:
-        turno = get_object_or_404(Turno, codigo=codigo)
-
-    context = {
-        'turno': turno,
-    }
-    return render(request, 'turnos/comprobante.html', context)
-
-
-@empresa_required
-def panel_empresa_view(request):
-    """
-    Dashboard operativo del centro de acopio con semáforo de capacidad, selector de fecha,
-    cierre de báscula con peso/clase y métricas en vivo de la jornada.
-    """
-    empresa_usuario = request.user.empresa_asociada
-    empresas_disponibles = EmpresaAcopio.objects.filter(activa=True)
-
-    empresa_id_param = request.GET.get('empresa')
-    if empresa_usuario:
-        empresa_actual = empresa_usuario
-    elif empresa_id_param:
-        empresa_actual = get_object_or_404(EmpresaAcopio, id=empresa_id_param)
-    else:
-        empresa_actual = empresas_disponibles.first()
-
-    fecha_param = request.GET.get('fecha')
-    if fecha_param:
+    if request.method == 'POST' and form.is_valid() and not cumplimiento['bloqueado']:
+        datos = form.cleaned_data
         try:
-            fecha_seleccionada = datetime.strptime(fecha_param, '%Y-%m-%d').date()
-        except ValueError:
-            fecha_seleccionada = date.today()
-    else:
-        fecha_seleccionada = date.today()
-
-    metricas_cupo = None
-    turnos_del_dia = Turno.objects.none()
-
-    if empresa_actual:
-        metricas_cupo = services.consultar_disponibilidad_cupo(empresa_actual, fecha_seleccionada)
-        turnos_del_dia = Turno.objects.filter(
-            empresa=empresa_actual,
-            fecha_entrega=fecha_seleccionada
-        ).select_related('productor').order_by('franja_horaria', 'creado_el')
-
-    activos_qs = turnos_del_dia.exclude(estado=Turno.ESTADO_CANCELADO)
-    total_turnos = activos_qs.count()
-
-    confirmados_qs = turnos_del_dia.filter(estado=Turno.ESTADO_CONFIRMADO)
-    en_playa_qs = turnos_del_dia.filter(estado=Turno.ESTADO_EN_PLAYA)
-    descargados_qs = turnos_del_dia.filter(estado=Turno.ESTADO_DESCARGADO)
-
-    confirmados_count = confirmados_qs.count()
-    en_playa_count = en_playa_qs.count()
-    descargados_count = descargados_qs.count()
-
-    kilos_confirmados = confirmados_qs.aggregate(t=Sum('kilos_estimados'))['t'] or 0
-    kilos_en_playa = en_playa_qs.aggregate(t=Sum('kilos_estimados'))['t'] or 0
-    kilos_descargados = sum(
-        (t.kilos_reales if t.kilos_reales is not None else t.kilos_estimados)
-        for t in descargados_qs
-    )
-    monto_jornada_usd = sum((t.importe_usd for t in descargados_qs), Decimal('0'))
-
-    esperas_hoy = [t.minutos_espera for t in descargados_qs if t.minutos_espera is not None]
-    espera_media_hoy = round(sum(esperas_hoy) / len(esperas_hoy)) if esperas_hoy else None
-
-    fecha_anterior = (fecha_seleccionada - timedelta(days=1)).strftime('%Y-%m-%d')
-    fecha_siguiente = (fecha_seleccionada + timedelta(days=1)).strftime('%Y-%m-%d')
-    hoy_iso = date.today().strftime('%Y-%m-%d')
-
-    context = {
-        'empresas_disponibles': empresas_disponibles,
-        'empresa_actual': empresa_actual,
-        'fecha_seleccionada': fecha_seleccionada.strftime('%Y-%m-%d'),
-        'fecha_display': fecha_seleccionada.strftime('%d/%m/%Y'),
-        'fecha_anterior': fecha_anterior,
-        'fecha_siguiente': fecha_siguiente,
-        'hoy_iso': hoy_iso,
-        'es_hoy': fecha_seleccionada == date.today(),
-        'metricas_cupo': metricas_cupo,
-        'turnos': turnos_del_dia,
-        'total_turnos': total_turnos,
-        'confirmados_count': confirmados_count,
-        'en_playa_count': en_playa_count,
-        'descargados_count': descargados_count,
-        'kilos_confirmados': kilos_confirmados,
-        'kilos_en_playa': kilos_en_playa,
-        'kilos_descargados': kilos_descargados,
-        'monto_jornada_usd': monto_jornada_usd,
-        'espera_media_hoy': espera_media_hoy,
-        'clases_tabaco': CLASES_TABACO,
-        'precios_clase': {k: str(v) for k, v in PRECIOS_CLASE_USD.items()},
-    }
-    return render(request, 'acopio/panel_empresa.html', context)
-
-
-@empresa_required
-@require_POST
-def transicionar_estado_view(request, turno_id):
-    """
-    Endpoint para cambiar el estado operativo de un turno:
-    'Confirmado' -> 'En playa' -> 'Descargado' (registrando peso neto y clase comercial).
-    """
-    nuevo_estado = request.POST.get('nuevo_estado')
-    fecha_redireccion = request.POST.get('fecha', '')
-    empresa_redireccion = request.POST.get('empresa_id', '')
-    kilos_reales = request.POST.get('kilos_reales')
-    clase_tabaco = request.POST.get('clase_tabaco')
-
-    try:
-        turno = services.transicionar_estado_turno(
-            turno_id=turno_id,
-            nuevo_estado=nuevo_estado,
-            kilos_reales=kilos_reales,
-            clase_tabaco=clase_tabaco,
-        )
-        if nuevo_estado == Turno.ESTADO_DESCARGADO:
-            messages.success(
-                request,
-                f"Descarga cerrada [{turno.codigo}]: {turno.kilos_reales:,} kg netos · "
-                f"Clase {turno.clase_tabaco} (USD {turno.importe_usd:,.2f})."
+            turno = productor.solicitar_turno(
+                datos['empresa'], datos['kilos_estimados'], datos['corte_tabaco'],
+                datos['patente_vehiculo'], datos['fecha_entrega'],
             )
+        except services.TurnoError as error:
+            form.add_error(None, str(error))
         else:
             messages.success(
                 request,
-                f"Turno [{turno.codigo}] actualizado exitosamente al estado: {turno.get_estado_display()}."
+                f'Turno {turno.codigo} solicitado para el {turno.fecha_entrega:%d/%m/%Y}, '
+                f'franja {turno.franja_horaria} hs. Queda pendiente hasta que lo confirme el recorredor.'
             )
-    except Exception as e:
-        messages.error(request, f"Error al actualizar estado: {str(e)}")
+            return redirect('turnos:comprobante', codigo=turno.codigo)
 
-    url_destino = f"/acopio/panel/?fecha={fecha_redireccion}&empresa={empresa_redireccion}"
-    return redirect(url_destino)
-
-
-@empresa_required
-def gerencia_empresa_view(request):
-    """
-    Sistema de Apoyo a la Toma de Decisiones (SAD) dirigido al Gerente del Centro de Acopio.
-    Analiza ganancias/liquidaciones, pérdidas de capacidad, tiempos de recorrido/espera y recomendaciones.
-    """
-    empresa_usuario = request.user.empresa_asociada
-    empresas_disponibles = EmpresaAcopio.objects.filter(activa=True)
-
-    empresa_id_param = request.GET.get('empresa')
-    if empresa_usuario:
-        empresa_actual = empresa_usuario
-    elif empresa_id_param:
-        empresa_actual = get_object_or_404(EmpresaAcopio, id=empresa_id_param)
-    else:
-        empresa_actual = empresas_disponibles.first()
-
-    dias, desde, hasta = analytics.resolver_periodo(request.GET.get('periodo'), por_defecto=30)
-    datos = analytics.analitica_empresa(empresa_actual, dias, desde, hasta) if empresa_actual else {}
-
-    context = {
-        'empresas_disponibles': empresas_disponibles,
-        'empresa_actual': empresa_actual,
-        'periodo_actual': dias,
-        'periodos_disponibles': analytics.PERIODOS_VALIDOS,
-        'desde': desde,
-        'hasta': hasta,
-        **datos,
-    }
-    return render(request, 'acopio/gerencia_empresa.html', context)
+    return render(request, 'turnos/solicitar_turno.html', {
+        'form': form,
+        'cumplimiento': cumplimiento,
+        'cupos': services.resumen_cupos(productor),
+        'sin_empresas': not empresas.exists(),
+    })
 
 
 @productor_required
-def gerencia_productor_view(request):
-    """
-    Sistema de Apoyo a la Toma de Decisiones (SAD) dirigido al Productor / Gerente Agropecuario.
-    Analiza ingresos liquidados, valor no percibido (merma y calidad), tiempos de viaje/espera
-    frente al promedio de planta y recomendaciones operativas.
-    """
-    dias, desde, hasta = analytics.resolver_periodo(request.GET.get('periodo'), por_defecto=30)
-    datos = analytics.analitica_productor(request.user, dias, desde, hasta)
+def cancelar_turno_productor_view(request, turno_id):
+    productor = request.perfil
+    turno = get_object_or_404(Turno, id=turno_id, productor=productor)
+    form = CancelacionForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            if turno.estado == EstadoTurno.CONFIRMADO:
+                avisos = productor.cancelar_turno_confirmado(turno, form.cleaned_data['mensaje'])
+            else:
+                avisos = productor.cancelar_turno(turno)
+        except services.TurnoError as error:
+            form.add_error(None, str(error))
+        else:
+            messages.success(request, f'Turno {turno.codigo} cancelado.')
+            return _mostrar_avisos(request, avisos, 'Avisar a la empresa de la cancelación',
+                                   reverse('turnos:mis_turnos'))
+    return render(request, 'turnos/cancelar_turno.html', {
+        'turno': turno,
+        'form': form,
+        'requiere_motivo': turno.estado == EstadoTurno.CONFIRMADO,
+        'volver': reverse('turnos:mis_turnos'),
+    })
 
-    context = {
-        'periodo_actual': dias,
-        'periodos_disponibles': analytics.PERIODOS_VALIDOS,
-        'desde': desde,
-        'hasta': hasta,
-        **datos,
-    }
-    return render(request, 'turnos/gerencia_productor.html', context)
+
+@productor_required
+def rendimiento_productor_view(request):
+    return render(request, 'turnos/rendimiento.html', request.perfil.consultar_rendimiento())
 
 
-def api_consultar_cupo_view(request):
-    """
-    API JSON para comprobación en tiempo real de cupos desde el formulario del productor.
-    """
-    empresa_id = request.GET.get('empresa_id')
-    fecha_str = request.GET.get('fecha')
+# ---------------------------------------------------------------------------
+# Comprobante (todos los tipos de usuario, según permisos)
+# ---------------------------------------------------------------------------
+@login_required
+def comprobante_view(request, codigo):
+    turno = get_object_or_404(
+        Turno.objects.select_related('empresa', 'productor', 'recorredor'), codigo=codigo
+    )
+    user = request.user
+    permitido = (
+        user.es_administrador
+        or user.es_operador
+        or (user.es_productor and turno.productor_id == user.pk)
+        or (user.es_empresa and turno.empresa_id == user.pk)
+        or (user.es_recorredor and turno.empresa_id == user.perfil.empresa_asignada_id)
+    )
+    if not permitido:
+        raise Http404
+    return render(request, 'turnos/comprobante.html', {
+        'turno': turno,
+        'comprobante': getattr(turno, 'comprobante', None),
+        'registro': getattr(turno, 'registro_operador', None),
+    })
 
-    if not empresa_id or not fecha_str:
-        return JsonResponse({'error': 'Faltan parámetros empresa_id o fecha'}, status=400)
 
+# ---------------------------------------------------------------------------
+# Recorredor
+# ---------------------------------------------------------------------------
+@recorredor_required
+def panel_recorredor_view(request):
+    recorredor = request.perfil
+    empresa = recorredor.empresa_asignada
+    hoy = timezone.localdate()
+    turnos = Turno.objects.filter(empresa=empresa).select_related('productor')
+    pendientes = list(turnos.filter(estado=EstadoTurno.PENDIENTE).order_by('fecha_entrega', 'franja_horaria'))
+    for t in pendientes:
+        t.cumplimiento = services.evaluar_cumplimiento(t.productor)
+    return render(request, 'turnos/recorredor_panel.html', {
+        'empresa': empresa,
+        'pendientes': pendientes,
+        'confirmados': turnos.filter(estado=EstadoTurno.CONFIRMADO, fecha_entrega__gte=hoy)
+                             .order_by('fecha_entrega', 'franja_horaria'),
+        'cupos': recorredor.cupos.select_related('productor'),
+    })
+
+
+@recorredor_required
+def asignar_turno_view(request):
+    recorredor = request.perfil
+    empresa = recorredor.empresa_asignada
+    form = AsignarTurnoForm(request.POST or None, empresa=empresa,
+                            initial={'fecha_entrega': timezone.localdate()})
+    if request.method == 'POST' and form.is_valid():
+        datos = form.cleaned_data
+        try:
+            turno = recorredor.asignar_turno(
+                datos['productor'], datos['kilos_estimados'], datos['corte_tabaco'],
+                datos['patente_vehiculo'], datos['fecha_entrega'],
+            )
+        except services.TurnoError as error:
+            form.add_error(None, str(error))
+        else:
+            messages.success(
+                request,
+                f'Turno {turno.codigo} asignado y confirmado: {turno.fecha_entrega:%d/%m/%Y}, '
+                f'franja {turno.franja_horaria} hs.'
+            )
+            aviso = armar_aviso(
+                turno.productor,
+                f'SOLTAT · {empresa.nombre} le asignó el turno {turno.codigo} para el '
+                f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs '
+                f'({services.kg(turno.kilos_estimados)}, corte {turno.get_corte_tabaco_display()}).'
+            )
+            return _mostrar_avisos(request, [aviso], 'Avisar al productor del turno asignado',
+                                   reverse('turnos:panel_recorredor'))
+    return render(request, 'turnos/asignar_turno.html', {'form': form, 'empresa': empresa})
+
+
+@recorredor_required
+@require_POST
+def confirmar_turno_view(request, turno_id):
+    recorredor = request.perfil
+    turno = get_object_or_404(Turno, id=turno_id)
     try:
-        empresa = EmpresaAcopio.objects.get(id=empresa_id, activa=True)
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-    except (EmpresaAcopio.DoesNotExist, ValueError):
-        return JsonResponse({'error': 'Empresa o fecha inválida'}, status=400)
+        recorredor.confirmar_turno(turno)
+    except services.TurnoError as error:
+        messages.error(request, str(error))
+        return redirect('turnos:panel_recorredor')
+    messages.success(request, f'Turno {turno.codigo} confirmado. Se emitió el comprobante.')
+    aviso = armar_aviso(
+        turno.productor,
+        f'SOLTAT · {turno.empresa.nombre} confirmó su turno {turno.codigo} del '
+        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs.'
+    )
+    return _mostrar_avisos(request, [aviso], 'Avisar al productor de la confirmación',
+                           reverse('turnos:panel_recorredor'))
 
-    datos = services.consultar_disponibilidad_cupo(empresa, fecha)
-    return JsonResponse(datos)
+
+@recorredor_required
+@require_POST
+def cancelar_turno_recorredor_view(request, turno_id):
+    recorredor = request.perfil
+    turno = get_object_or_404(Turno, id=turno_id)
+    try:
+        avisos = recorredor.cancelar_turno(turno, request.POST.get('mensaje', ''))
+    except services.TurnoError as error:
+        messages.error(request, str(error))
+        return redirect('turnos:panel_recorredor')
+    messages.success(request, f'Turno {turno.codigo} cancelado.')
+    return _mostrar_avisos(request, avisos, 'Avisar al productor de la cancelación',
+                           reverse('turnos:panel_recorredor'))
 
 
+# ---------------------------------------------------------------------------
+# Operador de acopio (garita y báscula, todas las empresas)
+# ---------------------------------------------------------------------------
+@operador_required
+def panel_operador_view(request):
+    fecha = _fecha_param(request)
+    turnos = (
+        Turno.objects.filter(fecha_entrega=fecha)
+        .exclude(estado__in=[EstadoTurno.PENDIENTE, EstadoTurno.CANCELADO])
+        .select_related('empresa', 'productor')
+        .order_by('franja_horaria', 'id')
+    )
+    empresa_id = request.GET.get('empresa', '')
+    if empresa_id.isdigit():
+        turnos = turnos.filter(empresa_id=int(empresa_id))
+    return render(request, 'turnos/operador_panel.html', {
+        **_contexto_fecha(fecha),
+        'turnos': turnos,
+        'empresas': EmpresaAcopio.objects.filter(activa=True),
+        'empresa_filtro': empresa_id,
+        'cortes': CorteTabaco.choices,
+        'en_playa': turnos.filter(estado=EstadoTurno.EN_PLAYA).count(),
+        'por_ingresar': turnos.filter(estado=EstadoTurno.CONFIRMADO).count(),
+        'descargados': turnos.filter(estado=EstadoTurno.DESCARGADO).count(),
+    })
+
+
+@operador_required
+@require_POST
+def registrar_ingreso_view(request, turno_id):
+    turno = get_object_or_404(Turno, id=turno_id)
+    try:
+        request.perfil.registrar_ingreso_garita(turno)
+        messages.success(request, f'Ingreso a playa registrado para {turno.codigo}.')
+    except services.TurnoError as error:
+        messages.error(request, str(error))
+    return redirect(_volver(request, reverse('turnos:panel_operador')))
+
+
+@operador_required
+@require_POST
+def registrar_pesaje_view(request, turno_id):
+    turno = get_object_or_404(Turno, id=turno_id)
+    try:
+        request.perfil.registrar_pesaje_y_descarga(
+            turno,
+            request.POST.get('peso_real'),
+            request.POST.get('corte_tabaco'),
+            request.POST.get('precio'),
+        )
+        messages.success(request, f'Descarga cerrada para {turno.codigo}: {services.kg(turno.kilos_reales)}.')
+    except services.TurnoError as error:
+        messages.error(request, str(error))
+    return redirect(_volver(request, reverse('turnos:panel_operador')))
+
+
+# ---------------------------------------------------------------------------
+# Empresa de acopio
+# ---------------------------------------------------------------------------
 @empresa_required
-def exportar_turnos_csv_view(request):
-    """
-    Exporta la grilla de turnos asignados del día seleccionado en formato CSV compatible con Excel.
-    """
-    empresa_usuario = request.user.empresa_asociada
-    empresa_id_param = request.GET.get('empresa')
-    if empresa_usuario:
-        empresa_actual = empresa_usuario
-    elif empresa_id_param:
-        empresa_actual = get_object_or_404(EmpresaAcopio, id=empresa_id_param)
-    else:
-        empresa_actual = EmpresaAcopio.objects.filter(activa=True).first()
+def panel_empresa_view(request):
+    empresa = request.perfil
+    fecha = _fecha_param(request)
+    form = ConvocatoriaForm(request.POST or None,
+                            initial={'corte_tabaco': empresa.corte_solicitado or None})
+    if request.method == 'POST' and form.is_valid():
+        datos = form.cleaned_data
+        try:
+            avisos = empresa.enviar_aviso(datos['corte_tabaco'], datos['kilos'], datos['mensaje'])
+        except services.TurnoError as error:
+            form.add_error(None, str(error))
+        else:
+            messages.success(request, f'Convocatoria publicada para {len(avisos)} productores con cupo.')
+            if not avisos:
+                return redirect('turnos:panel_empresa')
+            return _mostrar_avisos(request, avisos, 'Enviar la convocatoria a los productores',
+                                   reverse('turnos:panel_empresa'))
 
-    fecha_param = request.GET.get('fecha')
+    turnos = (
+        Turno.objects.filter(empresa=empresa, fecha_entrega=fecha)
+        .select_related('productor').order_by('franja_horaria', 'id')
+    )
+    return render(request, 'turnos/empresa_panel.html', {
+        **_contexto_fecha(fecha),
+        'empresa': empresa,
+        'disponibilidad': services.consultar_disponibilidad(empresa, fecha),
+        'turnos': turnos,
+        'pendientes': Turno.objects.filter(empresa=empresa, estado=EstadoTurno.PENDIENTE).count(),
+        'form': form,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Avisos de WhatsApp y API
+# ---------------------------------------------------------------------------
+@login_required
+def avisos_view(request):
+    datos = request.session.pop('avisos_whatsapp', None)
+    if not datos:
+        return redirect('login_redirect')
+    return render(request, 'turnos/avisos.html', datos)
+
+
+@login_required
+def api_disponibilidad_view(request):
     try:
-        fecha_seleccionada = datetime.strptime(fecha_param, '%Y-%m-%d').date() if fecha_param else date.today()
-    except ValueError:
-        fecha_seleccionada = date.today()
-
-    turnos = Turno.objects.filter(
-        empresa=empresa_actual,
-        fecha_entrega=fecha_seleccionada
-    ).select_related('productor').order_by('franja_horaria', 'creado_el')
-
-    nombre_archivo = f"planilla_acopio_{fecha_seleccionada.strftime('%Y%m%d')}.csv"
-    response = HttpResponse(content_type='text/csv; charset=utf-8')
-    response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
-    response.write('\ufeff')
-
-    writer = csv.writer(response, delimiter=';')
-    writer.writerow([
-        'Código de Turno',
-        'Productor / Razón Social',
-        'DNI / CUIT',
-        'Kilos Declarados (Kg)',
-        'Kilos Reales Báscula (Kg)',
-        'Clase Tabaco',
-        'Precio USD/kg',
-        'Importe Liquidado (USD)',
-        'Fecha de Entrega',
-        'Franja Horaria',
-        'Patente Vehículo',
-        'Viaje Finca->Garita (min)',
-        'Espera en Planta (min)',
-        'Recorrido Total (min)',
-        'Estado Operativo',
-        'Observaciones',
-    ])
-
-    for t in turnos:
-        writer.writerow([
-            t.codigo,
-            t.productor.razon_social or t.productor.get_full_name() or t.productor.username,
-            t.productor.cuit_dni,
-            t.kilos_estimados,
-            t.kilos_reales if t.kilos_reales is not None else '',
-            t.clase_tabaco or '',
-            t.precio_kg if t.precio_kg is not None else '',
-            t.importe_usd if t.kilos_reales else '',
-            t.fecha_entrega.strftime('%d/%m/%Y'),
-            t.franja_horaria,
-            t.patente_vehiculo,
-            t.minutos_viaje if t.minutos_viaje is not None else '',
-            t.minutos_espera if t.minutos_espera is not None else '',
-            t.minutos_ciclo if t.minutos_ciclo is not None else '',
-            t.get_estado_display(),
-            t.observaciones or '',
-        ])
-
-    return response
+        empresa = EmpresaAcopio.objects.get(pk=int(request.GET.get('empresa_id', '')), activa=True)
+        fecha = datetime.strptime(request.GET.get('fecha', ''), '%Y-%m-%d').date()
+    except (ValueError, EmpresaAcopio.DoesNotExist):
+        return JsonResponse({'error': 'Empresa o fecha inválida'}, status=400)
+    return JsonResponse(services.consultar_disponibilidad(empresa, fecha))

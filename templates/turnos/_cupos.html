@@ -1,0 +1,22 @@
+{% load humanize %}
+{% comment %}
+  Cupos de temporada del productor por empresa.
+  Requiere: cupos (lista de services.resumen_cupos)
+{% endcomment %}
+<div class="card-soltat p-3 shadow-sm h-100">
+  <span class="text-muted text-uppercase fw-bold d-block mb-2" style="font-size: 0.68rem; letter-spacing: 0.08em;">Cupo de temporada</span>
+  {% for c in cupos %}
+    <div class="mb-2">
+      <div class="d-flex justify-content-between small">
+        <strong class="text-dark">{{ c.empresa.nombre }}</strong>
+        <span class="tabular-nums">{{ c.remanente|intcomma }} kg disponibles</span>
+      </div>
+      <div class="progress" style="height: 6px;" role="progressbar" aria-valuenow="{{ c.porcentaje }}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" style="width: {{ c.porcentaje }}%; background-color: var(--color-primary);"></div>
+      </div>
+      <span class="text-muted" style="font-size: 0.72rem;">{{ c.usados|intcomma }} de {{ c.cupo_maximo|intcomma }} kg usados</span>
+    </div>
+  {% empty %}
+    <p class="small text-muted mb-0">No tiene cupo asignado con ninguna empresa. Consulte con el recorredor.</p>
+  {% endfor %}
+</div>

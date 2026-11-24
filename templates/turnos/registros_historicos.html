@@ -1,325 +1,68 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% load static %}
 
-{% block title %}Registros Históricos de Turnos · SOLTAT{% endblock %}
+{% block title %}Historial de Turnos{% endblock %}
 
 {% block content %}
 <div class="container pb-5">
 
-  <!-- CABECERA DEL PANEL HISTÓRICO -->
   <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end mb-4 gap-3">
     <div>
-      <span class="section-eyebrow">
-        <i class="bi bi-clock-history me-1"></i> Registros y Auditoría de Entregas
-      </span>
-      <h1 class="h2 mb-1">Registros Históricos de Turnos</h1>
-      <p class="text-muted small mb-0">
-        Historial integral de órdenes de entrega, volumen de carga declarado y liquidado en báscula.
-      </p>
+      <span class="section-eyebrow"><i class="bi bi-clock-history me-1"></i> Portal del Productor</span>
+      <h1 class="h2 mb-1">Historial de Turnos</h1>
+      <p class="text-muted small mb-0">Todos sus turnos, con su estado y los kilos registrados en báscula.</p>
     </div>
-
-    <!-- BOTONES DE ACCIÓN PRINCIPALES -->
-    <div class="d-flex flex-wrap align-items-center gap-2">
-      <!-- BOTÓN VOLVER A MIS TURNOS ACTIVOS -->
-      <a href="{% url 'turnos:mis_turnos' %}" class="btn btn-outline-soltat d-inline-flex align-items-center gap-2 py-2 px-3 shadow-sm">
-        <i class="bi bi-arrow-left fs-5"></i>
-        <span class="fw-bold">Mis Turnos Activos</span>
-      </a>
-
-      <a href="{% url 'turnos:gerencia_productor' %}" class="btn btn-secondary-soltat d-inline-flex align-items-center gap-2 py-2 px-3 shadow-sm">
-        <i class="bi bi-graph-up-arrow fs-5"></i>
-        <span>Tablero de Rendimiento</span>
-      </a>
-    </div>
+    <a href="{% url 'turnos:mis_turnos' %}" class="btn btn-outline-soltat"><i class="bi bi-arrow-left me-1"></i> Mis Turnos</a>
   </div>
 
-  <!-- TARJETAS DE INDICADORES (KPIs ACUMULADOS) -->
   <div class="row g-3 mb-4">
-    <div class="col-6 col-lg-3">
-      <div class="card-soltat p-3 h-100 border-start border-4 border-success">
-        <span class="text-muted small d-block mb-1">Total Turnos Asignados</span>
-        <div class="d-flex align-items-baseline gap-2">
-          <span class="h3 fw-bold tabular-nums mb-0 text-dark">{{ total_turnos }}</span>
-          <span class="text-muted small">turnos</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-lg-3">
-      <div class="card-soltat p-3 h-100 border-start border-4" style="border-color: var(--color-accent) !important;">
-        <span class="text-muted small d-block mb-1">Turnos Activos / Pendientes</span>
-        <div class="d-flex align-items-baseline gap-2">
-          <span class="h3 fw-bold tabular-nums mb-0" style="color: #9A6B10;">{{ turnos_activos }}</span>
-          <span class="text-muted small">en curso</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-lg-3">
-      <div class="card-soltat p-3 h-100 border-start border-4" style="border-color: var(--color-secondary) !important;">
-        <span class="text-muted small d-block mb-1">Descargas Completadas</span>
-        <div class="d-flex align-items-baseline gap-2">
-          <span class="h3 fw-bold tabular-nums mb-0" style="color: var(--color-secondary);">{{ turnos_descargados }}</span>
-          <span class="text-muted small">en báscula</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-lg-3">
-      <div class="card-soltat p-3 h-100 border-start border-4" style="border-color: var(--color-primary) !important;">
-        <span class="text-muted small d-block mb-1">Volumen Total Declarado</span>
-        <div class="d-flex align-items-baseline gap-2">
-          <span class="h3 fw-bold tabular-nums mb-0" style="color: var(--color-primary);">{{ kilos_totales|intcomma }}</span>
-          <span class="text-muted small">kg</span>
-        </div>
-      </div>
-    </div>
+    <div class="col-sm-4"><div class="card-soltat p-3 shadow-sm"><span class="text-muted small d-block">Total</span><span class="h3 fw-bold tabular-nums">{{ total_turnos }}</span></div></div>
+    <div class="col-sm-4"><div class="card-soltat p-3 shadow-sm"><span class="text-muted small d-block">Activos</span><span class="h3 fw-bold tabular-nums" style="color: #9A6B10;">{{ turnos_activos }}</span></div></div>
+    <div class="col-sm-4"><div class="card-soltat p-3 shadow-sm"><span class="text-muted small d-block">Descargados</span><span class="h3 fw-bold tabular-nums" style="color: var(--color-secondary);">{{ turnos_descargados }}</span></div></div>
   </div>
 
-  <!-- FILTROS POR ESTADO -->
-  {% if total_turnos > 0 %}
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <div class="d-flex flex-wrap gap-1 align-items-center">
-        <span class="text-muted small me-2"><i class="bi bi-funnel me-1"></i>Filtrar:</span>
-        <a href="{% url 'turnos:registros_historicos' %}"
-           class="btn btn-sm {% if not estado_filtro %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %} py-1 px-3" style="border-radius: 20px;">
-          Todos ({{ total_turnos }})
-        </a>
-        <a href="?estado=CONFIRMADO"
-           class="btn btn-sm {% if estado_filtro == 'CONFIRMADO' %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %} py-1 px-3" style="border-radius: 20px;">
-          Confirmados
-        </a>
-        <a href="?estado=EN_PLAYA"
-           class="btn btn-sm {% if estado_filtro == 'EN_PLAYA' %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %} py-1 px-3" style="border-radius: 20px;">
-          En Playa
-        </a>
-        <a href="?estado=DESCARGADO"
-           class="btn btn-sm {% if estado_filtro == 'DESCARGADO' %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %} py-1 px-3" style="border-radius: 20px;">
-          Descargados
-        </a>
-        <a href="?estado=CANCELADO"
-           class="btn btn-sm {% if estado_filtro == 'CANCELADO' %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %} py-1 px-3" style="border-radius: 20px;">
-          Cancelados
-        </a>
-      </div>
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="{% url 'turnos:registros_historicos' %}" class="btn btn-sm {% if not estado_filtro %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %}" style="border-radius: 20px;">Todos</a>
+    {% for valor, etiqueta in estados_choices %}
+      <a href="?estado={{ valor }}" class="btn btn-sm {% if estado_filtro == valor %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %}" style="border-radius: 20px;">{{ etiqueta }}</a>
+    {% endfor %}
+  </div>
 
-      <a href="{% url 'turnos:solicitar_turno' %}" class="btn btn-sm btn-outline-soltat d-inline-flex align-items-center gap-1">
-        <i class="bi bi-plus-circle"></i>
-        <span>Solicitar Turno</span>
-      </a>
+  <div class="card-soltat p-0 overflow-hidden shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-soltat align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Empresa</th>
+            <th>Fecha y franja</th>
+            <th>Corte</th>
+            <th class="text-end">Estimados</th>
+            <th class="text-end">Reales</th>
+            <th class="text-center">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in turnos %}
+          <tr>
+            <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
+            <td>{{ t.empresa.nombre }}</td>
+            <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span></td>
+            <td>{{ t.get_corte_tabaco_display }}</td>
+            <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
+            <td class="text-end tabular-nums">
+              {% if t.kilos_reales is not None %}{{ t.kilos_reales|intcomma }} kg
+                <span class="d-block text-muted" style="font-size: 0.72rem;">{{ t.desvio_pct|floatformat:1 }} %</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-center"><span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No hay turnos para mostrar.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  {% endif %}
-
-  <!-- CONTENIDO: LISTADO O ESTADO VACÍO -->
-  {% if not turnos %}
-    <!-- CASO: NO SE TIENEN REGISTROS HISTÓRICOS -->
-    <div class="card-soltat p-5 text-center my-4 shadow-sm" style="background-color: var(--color-surface); border: 2px dashed var(--color-border); border-radius: 16px;">
-      <div class="mb-4">
-        <div class="rounded-circle d-inline-flex align-items-center justify-content-center"
-             style="width: 80px; height: 80px; background-color: var(--color-primary-soft); color: var(--color-primary);">
-          <i class="bi bi-calendar2-x fs-1"></i>
-        </div>
-      </div>
-
-      {% if estado_filtro %}
-        <h3 class="h4 mb-2" style="font-family: 'Montserrat', sans-serif;">Sin turnos con estado "{{ estado_filtro }}"</h3>
-        <p class="text-muted small mx-auto mb-4" style="max-width: 480px;">
-          No se encontraron turnos en el historial que coincidan con el filtro aplicado.
-        </p>
-        <div class="d-flex justify-content-center gap-2">
-          <a href="{% url 'turnos:registros_historicos' %}" class="btn btn-outline-soltat px-3 py-2">
-            <i class="bi bi-arrow-counterclockwise me-1"></i> Ver todos los registros
-          </a>
-          <a href="{% url 'turnos:solicitar_turno' %}" class="btn btn-primary-soltat px-3 py-2">
-            <i class="bi bi-calendar2-plus-fill me-1"></i> Solicitar Turno
-          </a>
-        </div>
-      {% else %}
-        <h2 class="h3 mb-2" style="font-family: 'Montserrat', sans-serif; color: var(--color-primary);">
-          No se registran turnos históricos
-        </h2>
-        <p class="text-muted mx-auto mb-4" style="max-width: 520px; font-size: 0.95rem;">
-          Aún no registra órdenes de entrega ni turnos completados en la presente campaña tabacalera.
-        </p>
-
-        <div>
-          <a href="{% url 'turnos:solicitar_turno' %}" class="btn btn-primary-soltat btn-lg px-4 py-3 shadow d-inline-flex align-items-center gap-2">
-            <i class="bi bi-calendar2-plus-fill fs-5"></i>
-            <span class="fw-bold">Solicitar Turno Ahora</span>
-          </a>
-        </div>
-      {% endif %}
-    </div>
-
-  {% else %}
-
-    <!-- CASO: TABLA DE HISTÓRICO DE TURNOS (DESKTOP) -->
-    <div class="card-soltat p-0 overflow-hidden shadow-sm d-none d-md-block mb-4">
-      <div class="table-responsive">
-        <table class="table table-soltat align-middle mb-0">
-          <thead>
-            <tr>
-              <th scope="col">Código de Turno</th>
-              <th scope="col">Planta de Acopio</th>
-              <th scope="col">Fecha &amp; Franja Horaria</th>
-              <th scope="col">Vehículo</th>
-              <th scope="col" class="text-end">Carga Declarada / Real</th>
-              <th scope="col" class="text-center">Estado</th>
-              <th scope="col" class="text-end">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for t in turnos %}
-              <tr class="{% if t.estado == 'EN_PLAYA' %}row-en-playa{% endif %}">
-                <!-- Código de Orden -->
-                <td>
-                  <a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none d-inline-flex align-items-center gap-1" style="color: var(--color-primary); font-size: 0.92rem;">
-                    {{ t.codigo }}
-                    <i class="bi bi-box-arrow-up-right" style="font-size: 0.72rem;"></i>
-                  </a>
-                  <span class="d-block text-muted" style="font-size: 0.72rem;">Emitido {{ t.creado_el|date:"d/m/Y H:i" }}</span>
-                </td>
-
-                <!-- Empresa de Acopio -->
-                <td>
-                  <strong class="d-block text-dark" style="font-size: 0.88rem;">{{ t.empresa.nombre }}</strong>
-                  <span class="text-muted" style="font-size: 0.74rem;"><i class="bi bi-geo-alt me-1"></i>{{ t.empresa.direccion|default:t.empresa.cuit }}</span>
-                </td>
-
-                <!-- Fecha y Franja -->
-                <td>
-                  <div class="time-window-pill">
-                    <i class="bi bi-calendar3 text-muted"></i>
-                    <span class="tabular-nums fw-bold">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
-                  </div>
-                  <div class="text-muted small mt-1">
-                    <i class="bi bi-clock me-1"></i>{{ t.franja_horaria }}
-                  </div>
-                </td>
-
-                <!-- Patente / Vehículo -->
-                <td>
-                  <div class="chapa-patente">
-                    <span class="chapa-top">ARG</span>
-                    <span class="chapa-num">{{ t.patente_vehiculo }}</span>
-                  </div>
-                </td>
-
-                <!-- Carga / Kilos -->
-                <td class="text-end">
-                  <div class="fw-bold text-dark tabular-nums fs-6">
-                    {{ t.kilos_efectivos|intcomma }} kg
-                  </div>
-                  {% if t.kilos_reales %}
-                    <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 0.7rem;">
-                      Báscula: {{ t.kilos_reales|intcomma }} kg
-                    </span>
-                  {% else %}
-                    <span class="text-muted" style="font-size: 0.72rem;">Estimado</span>
-                  {% endif %}
-                </td>
-
-                <!-- Estado -->
-                <td class="text-center">
-                  <span class="badge-soltat {{ t.badge_class }}" style="font-size: 0.75rem; padding: 0.35rem 0.7rem;">
-                    {{ t.get_estado_display }}
-                  </span>
-
-                  <!-- Sub-indicador de ruta -->
-                  {% if t.hora_salida_origen and not t.hora_arribo_playa %}
-                    <span class="d-block text-success fw-medium mt-1" style="font-size: 0.72rem;">
-                      <i class="bi bi-truck me-1"></i> En viaje ({{ t.hora_salida_origen|date:"H:i" }})
-                    </span>
-                  {% elif t.minutos_viaje is not None %}
-                    <span class="d-block text-muted mt-1" style="font-size: 0.72rem;">
-                      <i class="bi bi-signpost-split me-1"></i> {{ t.minutos_viaje }}m en ruta
-                    </span>
-                  {% endif %}
-                </td>
-
-                <!-- Acciones -->
-                <td class="text-end">
-                  <div class="d-flex justify-content-end align-items-center gap-2">
-                    {% if t.estado == 'CONFIRMADO' and not t.hora_salida_origen %}
-                      <form method="post" action="{% url 'turnos:informar_salida' t.id %}" class="d-inline m-0">
-                        {% csrf_token %}
-                        <input type="hidden" name="next" value="{% url 'turnos:registros_historicos' %}">
-                        <button type="submit" class="btn btn-sm btn-outline-soltat py-1 px-2" style="font-size: 0.78rem;" title="Informar que el camión inició viaje hacia la planta">
-                          <i class="bi bi-send-check me-1"></i> Iniciar Viaje
-                        </button>
-                      </form>
-                    {% endif %}
-
-                    <!-- Comprobante / Orden -->
-                    <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat py-1 px-2" style="font-size: 0.78rem;" title="Ver orden de ingreso">
-                      <i class="bi bi-file-earmark-text me-1"></i> Orden
-                    </a>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- VISTA MÓVIL (TARJETAS) -->
-    <div class="d-md-none d-flex flex-column gap-3 mb-4">
-      {% for t in turnos %}
-        <div class="card-soltat p-3 shadow-sm border">
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <div>
-              <a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none" style="color: var(--color-primary); font-size: 0.95rem;">
-                {{ t.codigo }}
-              </a>
-              <span class="d-block text-muted" style="font-size: 0.72rem;">{{ t.creado_el|date:"d/m/Y H:i" }}</span>
-            </div>
-            <span class="badge-soltat {{ t.badge_class }}" style="font-size: 0.72rem;">
-              {{ t.get_estado_display }}
-            </span>
-          </div>
-
-          <div class="fw-semibold text-dark mb-1">{{ t.empresa.nombre }}</div>
-
-          <div class="p-2 rounded-2 mb-2" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
-            <div class="d-flex justify-content-between align-items-center text-muted small mb-1">
-              <span><i class="bi bi-calendar3 me-1"></i>{{ t.fecha_entrega|date:"d/m/Y" }}</span>
-              <span><i class="bi bi-clock me-1"></i>{{ t.franja_horaria }}</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="small text-muted">Patente: <strong class="text-dark">{{ t.patente_vehiculo }}</strong></span>
-              <span class="fw-bold text-dark tabular-nums">{{ t.kilos_efectivos|intcomma }} kg</span>
-            </div>
-          </div>
-
-          <!-- Acciones en Móvil -->
-          <div class="d-flex justify-content-between align-items-center gap-2 pt-2 border-top">
-            {% if t.estado == 'CONFIRMADO' and not t.hora_salida_origen %}
-              <form method="post" action="{% url 'turnos:informar_salida' t.id %}" class="m-0 flex-grow-1">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'turnos:registros_historicos' %}">
-                <button type="submit" class="btn btn-sm btn-outline-soltat w-100 py-1" style="font-size: 0.78rem;">
-                  <i class="bi bi-send-check me-1"></i> Informar Salida Finca
-                </button>
-              </form>
-            {% else %}
-              <span class="text-muted small">
-                {% if t.hora_salida_origen and not t.hora_arribo_playa %}
-                  <i class="bi bi-truck text-success me-1"></i> En ruta
-                {% endif %}
-              </span>
-            {% endif %}
-
-            <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-primary-soltat py-1 px-3" style="font-size: 0.78rem;">
-              <i class="bi bi-file-earmark-text me-1"></i> Ver Orden
-            </a>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-
-  {% endif %}
-
+  </div>
 </div>
 {% endblock %}

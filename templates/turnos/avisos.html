@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}Avisos por WhatsApp{% endblock %}
+
+{% block content %}
+<div class="container pb-5" style="max-width: 760px;">
+  <span class="section-eyebrow"><i class="bi bi-whatsapp me-1"></i> Avisos por WhatsApp</span>
+  <h1 class="h3 mb-1">{{ titulo }}</h1>
+  <p class="text-muted small mb-4">
+    Toque «Abrir WhatsApp» en cada aviso: se abre la conversación con el mensaje ya escrito y solo tiene que enviarlo.
+  </p>
+
+  <div class="d-flex flex-column gap-3 mb-4">
+    {% for a in avisos %}
+      <div class="card-soltat p-3 shadow-sm">
+        <div class="d-flex justify-content-between align-items-start gap-3">
+          <div>
+            <strong class="d-block">{{ a.destinatario }}</strong>
+            <span class="text-muted small">{{ a.telefono|default:"Sin teléfono cargado" }}</span>
+            <p class="small mb-0 mt-2 p-2 rounded" style="background-color: var(--color-surface-warm);">{{ a.mensaje }}</p>
+          </div>
+          {% if a.url %}
+            <a href="{{ a.url }}" target="_blank" rel="noopener" class="btn btn-success btn-sm text-nowrap">
+              <i class="bi bi-whatsapp me-1"></i> Abrir WhatsApp
+            </a>
+          {% else %}
+            <span class="badge bg-secondary-subtle text-secondary">Sin teléfono</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <a href="{{ volver }}" class="btn btn-primary-soltat"><i class="bi bi-check2 me-1"></i> Listo</a>
+</div>
+{% endblock %}

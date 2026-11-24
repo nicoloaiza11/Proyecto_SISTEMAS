@@ -1,0 +1,31 @@
+{% comment %}
+  Tarjeta del nivel de cumplimiento del productor (modelo de premios y castigos).
+  Requiere: cumplimiento (dict de services.evaluar_cumplimiento)
+{% endcomment %}
+<div class="card-soltat p-3 shadow-sm h-100 border-start border-4 border-{{ cumplimiento.css }}">
+  <div class="d-flex justify-content-between align-items-start gap-2">
+    <div>
+      <span class="text-muted text-uppercase fw-bold d-block" style="font-size: 0.68rem; letter-spacing: 0.08em;">Nivel de cumplimiento</span>
+      <span class="h4 fw-bold mb-0 text-{{ cumplimiento.css }}">{{ cumplimiento.nivel_display }}</span>
+    </div>
+    <span class="badge bg-{{ cumplimiento.css }}-subtle text-{{ cumplimiento.css }} border border-{{ cumplimiento.css }}-subtle">
+      {{ cumplimiento.cantidad }} incumplimiento{{ cumplimiento.cantidad|pluralize }} · últimos {{ cumplimiento.ventana_dias }} días
+    </span>
+  </div>
+  <p class="small text-muted mb-0 mt-2">
+    {% if cumplimiento.bloqueado %}
+      No puede solicitar turnos hasta el <strong>{{ cumplimiento.bloqueado_hasta|date:"d/m/Y" }}</strong>. Solo el recorredor de su empresa puede asignarle turnos.
+    {% elif cumplimiento.nivel == 'BUENO' %}
+      Accede a todas las franjas desde las 06:00 hs.
+    {% else %}
+      Accede a franjas desde las {{ cumplimiento.hora_minima|stringformat:"02d" }}:00 hs. Cumpla sus próximos turnos para mejorar su nivel.
+    {% endif %}
+  </p>
+  {% if cumplimiento.detalle %}
+    <ul class="small mb-0 mt-2 ps-3">
+      {% for i in cumplimiento.detalle|slice:":4" %}
+        <li>{{ i.fecha|date:"d/m/Y" }} · {{ i.motivo }} ({{ i.turno.codigo }})</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
