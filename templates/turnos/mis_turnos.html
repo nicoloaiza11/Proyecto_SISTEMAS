@@ -56,8 +56,13 @@
               <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
               <td>{{ t.empresa.nombre }}</td>
               <td>
-                <span class="tabular-nums fw-bold">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
-                <span class="d-block text-muted small"><i class="bi bi-clock me-1"></i>{{ t.franja_horaria }} hs</span>
+                {% if t.fecha_entrega %}
+                  <span class="tabular-nums fw-bold">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
+                  <span class="d-block text-muted small"><i class="bi bi-clock me-1"></i>{{ t.franja_horaria }} hs</span>
+                {% else %}
+                  <span class="badge bg-light text-secondary border"><i class="bi bi-magic me-1"></i>Asignación por sistema</span>
+                  <span class="d-block text-muted small">Al confirmar</span>
+                {% endif %}
               </td>
               <td>{{ t.get_corte_tabaco_display }}</td>
               <td class="text-end tabular-nums fw-bold">{{ t.kilos_estimados|intcomma }} kg</td>
@@ -68,7 +73,11 @@
               <td class="text-end">
                 <div class="d-flex justify-content-end gap-2">
                   <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
-                    <i class="bi bi-file-earmark-text me-1"></i>{% if t.estado == 'PENDIENTE' %}Ver{% else %}Comprobante{% endif %}
+                    {% if t.estado == 'DESCARGADO' %}
+                      <i class="bi bi-file-earmark-check me-1"></i>Comprobante
+                    {% else %}
+                      <i class="bi bi-eye me-1"></i>Ver turno
+                    {% endif %}
                   </a>
                   {% if t.estado == 'PENDIENTE' or t.estado == 'CONFIRMADO' %}
                   <a href="{% url 'turnos:cancelar_turno' t.id %}" class="btn btn-sm btn-outline-danger">

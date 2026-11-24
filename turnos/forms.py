@@ -9,7 +9,7 @@ SELECT = {'class': 'form-select form-select-lg'}
 
 
 class DatosTurnoForm(forms.Form):
-    """Campos comunes a la solicitud (productor) y la asignación (recorredor)."""
+    """Campos comunes a la asignación (recorredor) y turnos con fecha."""
     kilos_estimados = forms.IntegerField(
         label='Kilos estimados', min_value=1,
         widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000', 'step': '50'}),
@@ -37,13 +37,24 @@ class DatosTurnoForm(forms.Form):
         return fecha
 
 
-class SolicitudTurnoForm(DatosTurnoForm):
-    """El productor elige empresa, día, kilos y corte; la franja la asigna el sistema."""
+class SolicitudTurnoForm(forms.Form):
+    """El productor elige empresa, kilos, corte y patente; la fecha y franja las asigna el sistema al confirmar."""
     empresa = forms.ModelChoiceField(
         label='Empresa compradora', queryset=None, empty_label='Seleccione la empresa',
         widget=forms.Select(attrs=SELECT),
     )
-    field_order = ['empresa', 'fecha_entrega', 'kilos_estimados', 'corte_tabaco', 'patente_vehiculo']
+    kilos_estimados = forms.IntegerField(
+        label='Kilos estimados', min_value=1,
+        widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000', 'step': '50'}),
+    )
+    corte_tabaco = forms.ChoiceField(
+        label='Corte de tabaco', choices=CorteTabaco.choices, widget=forms.Select(attrs=SELECT),
+    )
+    patente_vehiculo = forms.CharField(
+        label='Patente del vehículo', max_length=20,
+        widget=forms.TextInput(attrs={**INPUT, 'class': INPUT['class'] + ' text-uppercase', 'placeholder': 'Ej. AE123CD'}),
+    )
+    field_order = ['empresa', 'kilos_estimados', 'corte_tabaco', 'patente_vehiculo']
 
     def __init__(self, *args, empresas, **kwargs):
         super().__init__(*args, **kwargs)

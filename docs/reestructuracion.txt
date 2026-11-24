@@ -308,4 +308,52 @@ Para volver a cargar los datos de prueba:
     meteorológicas (están en el PDF, no en el diagrama).
   - Los cambios no están commiteados. Se recomienda hacer el commit en una
     rama aparte (no en main) y revisarlo con el equipo.
+
+
+------------------------------------------------------------------------------
+10. ACTUALIZACIÓN POST-REVISIÓN (Ajustes de Negocio y Flujo Operativo)
+------------------------------------------------------------------------------
+Fecha: 24/11/2026
+Rama de trabajo: reestructuracion_nico
+
+A. Ajustes Implementados:
+  1. Solicitud de turno sin fecha por el productor:
+     - El productor ya no elige fecha ni franja horaria al solicitar un turno.
+     - La solicitud queda en estado PENDIENTE con fecha_entrega y franja_horaria nulos.
+     - La asignación del turno (fecha y franja horaria) la otorga automáticamente el sistema
+       en el momento exacto en que la empresa/recorredor confirma la solicitud, buscando la primera
+       fecha y franja disponible con cupo suficiente, respetando el nivel de cumplimiento del productor.
+     - La capacidad de la planta no se compromete durante la etapa pendiente, evitando bloqueos
+       especulativos de cupo diario.
+
+  2. Emisión exclusiva del Comprobante tras el procesamiento del producto:
+     - Se eliminó la emisión prematura del comprobante al confirmar o asignar el turno.
+     - El comprobante oficial se crea y emite única y exclusivamente cuando el operador de acopio
+       finaliza el pesaje y descarga en báscula (registrar_pesaje_y_descarga).
+     - Son requisitos obligatorios e indispensables para su emisión:
+         * Peso real descargado (en kg, mayor a cero).
+         * Corte real de tabaco percibido en planta (puede diferir del corte declarado por el productor).
+         * Precio acordado por kg (fijado obligatoriamente por el operador, mayor a cero).
+     - Mientras el turno no esté descargado, el sistema muestra una ficha de estado y seguimiento logístico,
+       aclarando que el comprobante de liquidación se emitirá tras la descarga y pesaje oficial.
+
+  3. Historial individual con comprobante idéntico para Productor y Empresa:
+     - El Comprobante Oficial es único, idéntico e inmutable para ambas partes.
+     - Se incorporó la sección individual de Historial y Comprobantes para la Empresa en /acopio/historial/,
+       con acceso a todos sus turnos y comprobantes de liquidación emitidos.
+     - Se adaptó el Historial del Productor (/turnos/registros-historicos/) y su portal de turnos activos
+       para acceder directamente al mismo comprobante oficial.
+
+  4. Trazabilidad de cancelaciones y penalizaciones:
+     - Se agregó el campo `fue_confirmado` en el modelo Turno para preservar el registro de incumplimiento
+       cuando un productor cancela un turno que ya había sido confirmado por la empresa, independientemente
+       de que el comprobante aún no hubiera sido emitido.
+
+B. Puntos que se deben resolver o mejorar a futuro:
+  - Interfaz dedicada para gestión de cupos de temporada por el recorredor (actualmente se gestionan en /admin).
+  - Generación de PDF descargable y firma digital para el comprobante oficial (actualmente se utiliza la
+    hoja de estilos optimizada para impresión nativa del navegador window.print()).
+  - Generación de código QR en el turno/comprobante para escaneo rápido en garita desde dispositivos móviles.
+  - Alertas meteorológicas o de fuerza mayor para reprogramación por lotes de turnos en caso de inclemencias climáticas.
+  - Normalización de nombres de variables de entorno de PostgreSQL (.env vs settings.py).
 ==============================================================================

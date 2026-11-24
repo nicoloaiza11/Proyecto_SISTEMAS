@@ -40,6 +40,7 @@
             <th class="text-end">Estimados</th>
             <th class="text-end">Reales</th>
             <th class="text-center">Estado</th>
+            <th class="text-end">Comprobante</th>
           </tr>
         </thead>
         <tbody>
@@ -47,7 +48,13 @@
           <tr>
             <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
             <td>{{ t.empresa.nombre }}</td>
-            <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span></td>
+            <td>
+              {% if t.fecha_entrega %}
+                <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span>
+              {% else %}
+                <span class="badge bg-light text-secondary border">Asignación al confirmar</span>
+              {% endif %}
+            </td>
             <td>{{ t.get_corte_tabaco_display }}</td>
             <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
             <td class="text-end tabular-nums">
@@ -56,9 +63,20 @@
               {% else %}—{% endif %}
             </td>
             <td class="text-center"><span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span></td>
+            <td class="text-end">
+              {% if t.estado == 'DESCARGADO' %}
+                <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
+                  <i class="bi bi-file-earmark-check me-1"></i>Comprobante
+                </a>
+              {% else %}
+                <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
+                  <i class="bi bi-eye me-1"></i>Ver
+                </a>
+              {% endif %}
+            </td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="text-center text-muted py-4">No hay turnos para mostrar.</td></tr>
+          <tr><td colspan="8" class="text-center text-muted py-4">No hay turnos para mostrar.</td></tr>
           {% endfor %}
         </tbody>
       </table>

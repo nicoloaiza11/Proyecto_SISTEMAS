@@ -10,8 +10,8 @@
     <span class="section-eyebrow"><i class="bi bi-calendar2-plus me-1"></i> Portal del Productor</span>
     <h1 class="h2 mb-1">Solicitar Turno</h1>
     <p class="text-muted small mb-0">
-      Elija la empresa y el día. El sistema le asigna automáticamente la primera franja de 2 horas con lugar,
-      según su nivel de cumplimiento. El turno queda pendiente hasta que lo confirme el recorredor.
+      Indique la empresa, los kilos estimados, el corte y el dominio de su vehículo.
+      La fecha y franja horaria serán asignadas y notificadas automáticamente por el sistema al momento en que la empresa confirme su solicitud.
     </p>
   </div>
 
@@ -34,23 +34,22 @@
           <form method="post" novalidate>
             {% csrf_token %}
             <div class="row">
-              <div class="col-md-7">{% include 'turnos/_field.html' with field=form.empresa %}</div>
-              <div class="col-md-5">{% include 'turnos/_field.html' with field=form.fecha_entrega %}</div>
-              <div class="col-md-6">{% include 'turnos/_field.html' with field=form.kilos_estimados %}</div>
-              <div class="col-md-6">{% include 'turnos/_field.html' with field=form.corte_tabaco %}</div>
-              <div class="col-md-6">{% include 'turnos/_field.html' with field=form.patente_vehiculo %}</div>
+              <div class="col-md-12 mb-2">{% include 'turnos/_field.html' with field=form.empresa %}</div>
+              <div class="col-md-6 mb-2">{% include 'turnos/_field.html' with field=form.kilos_estimados %}</div>
+              <div class="col-md-6 mb-2">{% include 'turnos/_field.html' with field=form.corte_tabaco %}</div>
+              <div class="col-md-12 mb-3">{% include 'turnos/_field.html' with field=form.patente_vehiculo %}</div>
             </div>
+
+            <div class="alert alert-info py-2 px-3 small mb-3">
+              <i class="bi bi-info-circle me-1"></i>
+              <strong>Asignación automática:</strong> Una vez enviada la solicitud, el recorredor de la empresa la revisará y el sistema le otorgará el día y franja horaria más próximos disponibles según su nivel de cumplimiento.
+            </div>
+
             <button type="submit" class="btn btn-primary-soltat btn-lg px-4">
-              <i class="bi bi-send me-1"></i> Solicitar turno
+              <i class="bi bi-send me-1"></i> Enviar solicitud de turno
             </button>
           </form>
         {% endif %}
-      </div>
-
-      <div class="card-soltat p-4 shadow-sm mt-4" id="panelDisponibilidad" hidden>
-        <h2 class="h6 fw-bold mb-1">Ocupación del día</h2>
-        <p class="small text-muted mb-3" id="resumenDia"></p>
-        <div id="franjas" class="d-flex flex-column gap-2"></div>
       </div>
     </div>
 
@@ -60,47 +59,4 @@
     </div>
   </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-  // Muestra la ocupación por franja de la empresa y el día elegidos.
-  (function () {
-    const empresa = document.getElementById('{{ form.empresa.id_for_label }}');
-    const fecha = document.getElementById('{{ form.fecha_entrega.id_for_label }}');
-    const panel = document.getElementById('panelDisponibilidad');
-    const resumen = document.getElementById('resumenDia');
-    const franjas = document.getElementById('franjas');
-    const horaMinima = {{ cumplimiento.hora_minima|default:6 }};
-    if (!empresa || !fecha) return;
-    const kg = n => n.toLocaleString('es-AR') + ' kg';
-
-    async function actualizar() {
-      if (!empresa.value || !fecha.value) { panel.hidden = true; return; }
-      const r = await fetch(`{% url 'turnos:api_disponibilidad' %}?empresa_id=${empresa.value}&fecha=${fecha.value}`);
-      if (!r.ok) { panel.hidden = true; return; }
-      const d = await r.json();
-      resumen.textContent = `${d.empresa_nombre}: ${kg(d.kilos_disponibles)} libres de ${kg(d.capacidad_diaria)} en el día.`;
-      franjas.innerHTML = '';
-      d.franjas.forEach(f => {
-        const habilitada = parseInt(f.valor) >= horaMinima;
-        const fila = document.createElement('div');
-        fila.className = 'small' + (habilitada ? '' : ' text-muted opacity-50');
-        fila.innerHTML = `
-          <div class="d-flex justify-content-between">
-            <span>${f.etiqueta}${habilitada ? '' : ' · no disponible para su nivel'}</span>
-            <span class="tabular-nums">${kg(f.disponibles)} libres</span>
-          </div>
-          <div class="progress" style="height: 6px;">
-            <div class="progress-bar" style="width: ${f.porcentaje}%; background-color: var(--color-primary);"></div>
-          </div>`;
-        franjas.appendChild(fila);
-      });
-      panel.hidden = false;
-    }
-    empresa.addEventListener('change', actualizar);
-    fecha.addEventListener('change', actualizar);
-    actualizar();
-  })();
-</script>
 {% endblock %}

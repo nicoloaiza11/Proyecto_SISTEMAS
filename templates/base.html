@@ -70,6 +70,7 @@
               <li class="nav-item"><a class="nav-link {% if rn == 'panel_operador' %}active{% endif %}" href="{% url 'turnos:panel_operador' %}"><i class="bi bi-truck me-1"></i> Garita y Báscula</a></li>
             {% elif user.es_empresa %}
               <li class="nav-item"><a class="nav-link {% if rn == 'panel_empresa' %}active{% endif %}" href="{% url 'turnos:panel_empresa' %}"><i class="bi bi-layout-wtf me-1"></i> Ocupación y Convocatorias</a></li>
+              <li class="nav-item"><a class="nav-link {% if rn == 'historial_empresa' %}active{% endif %}" href="{% url 'turnos:historial_empresa' %}"><i class="bi bi-clock-history me-1"></i> Historial y Comprobantes</a></li>
             {% endif %}
             {% if user.es_administrador %}
               <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}"><i class="bi bi-gear me-1"></i> Administración</a></li>
