@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Garita y Báscula{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4 pb-5">
+
+  <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end mb-4 gap-3">
+    <div>
+      <span class="section-eyebrow"><i class="bi bi-truck me-1"></i> Operador · Centro de acopio de Perico</span>
+      <h1 class="h2 mb-1">Garita y Báscula</h1>
+      <p class="text-muted small mb-0">Turnos confirmados de todas las empresas para el {{ fecha|date:"d/m/Y" }}.</p>
+    </div>
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
+      <a href="?fecha={{ fecha_anterior }}&empresa={{ empresa_filtro }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-left"></i></a>
+      <input type="date" name="fecha" value="{{ fecha_iso }}" class="form-control form-control-sm" style="width: auto;" onchange="this.form.submit()">
+      <a href="?fecha={{ fecha_siguiente }}&empresa={{ empresa_filtro }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-right"></i></a>
+      {% if not es_hoy %}<a href="?fecha={{ hoy_iso }}" class="btn btn-sm btn-outline-soltat">Hoy</a>{% endif %}
+      <select name="empresa" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+        <option value="">Todas las empresas</option>
+        {% for e in empresas %}<option value="{{ e.pk }}" {% if empresa_filtro == e.pk|stringformat:"d" %}selected{% endif %}>{{ e.nombre }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-4"><div class="card-soltat p-3 shadow-sm"><span class="text-muted small d-block">Por ingresar</span><span class="h3 fw-bold tabular-nums">{{ por_ingresar }}</span></div></div>
+    <div class="col-4"><div class="card-soltat p-3 shadow-sm"><span class="text-muted small d-block">En playa</span><span class="h3 fw-bold tabular-nums" style="color: #9A6B10;">{{ en_playa }}</span></div></div>
+    <div class="col-4"><div class="card-soltat p-3 shadow-sm"><span class="text-muted small d-block">Descargados</span><span class="h3 fw-bold tabular-nums" style="color: var(--color-secondary);">{{ descargados }}</span></div></div>
+  </div>
+
+  <div class="card-soltat p-0 overflow-hidden shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-soltat align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Franja</th><th>Código</th><th>Empresa</th><th>Productor</th><th>Patente</th><th>Corte</th>
+            <th class="text-end">Kilos acordados</th><th class="text-center">Estado</th><th style="min-width: 320px;">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in turnos %}
+          <tr>
+            <td class="tabular-nums fw-bold">{{ t.franja_horaria }}</td>
+            <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
+            <td>{{ t.empresa.nombre }}</td>
+            <td>{{ t.productor.get_nombre_completo }}</td>
+            <td class="font-monospace">{{ t.patente_vehiculo }}</td>
+            <td>{{ t.get_corte_tabaco_display }}</td>
+            <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
+            <td class="text-center">
+              <span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span>
+              {% if t.hora_arribo_playa %}<span class="d-block text-muted" style="font-size: 0.72rem;">Ingresó {{ t.hora_arribo_playa|date:"H:i" }}</span>{% endif %}
+            </td>
+            <td>
+              {% if t.estado == 'CONFIRMADO' %}
+                <form method="post" action="{% url 'turnos:registrar_ingreso' t.id %}" class="m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button class="btn btn-sm btn-primary-soltat" {% if not es_hoy %}disabled title="Solo se registran ingresos del día"{% endif %}>
+                    <i class="bi bi-box-arrow-in-right me-1"></i>Registrar ingreso en garita
+                  </button>
+                </form>
+              {% elif t.estado == 'EN_PLAYA' %}
+                <form method="post" action="{% url 'turnos:registrar_pesaje' t.id %}" class="m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <div class="input-group input-group-sm">
+                    <input type="number" name="peso_real" class="form-control" placeholder="Peso real (kg)" min="1" required>
+                    <select name="corte_tabaco" class="form-select" required>
+                      {% for valor, etiqueta in cortes %}<option value="{{ valor }}" {% if valor == t.corte_tabaco %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+                    </select>
+                    <input type="text" name="precio" class="form-control" placeholder="Precio/kg (opc.)" inputmode="decimal">
+                    <button class="btn btn-primary-soltat"><i class="bi bi-check2"></i> Descargar</button>
+                  </div>
+                </form>
+              {% else %}
+                <span class="small text-muted">{{ t.kilos_reales|intcomma }} kg · {{ t.hora_descarga|date:"H:i" }} hs</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" class="text-center text-muted py-4">No hay turnos confirmados para esta fecha.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

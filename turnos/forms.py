@@ -1,76 +1,85 @@
-from datetime import date
 from django import forms
-from .models import Turno, EmpresaAcopio
+from django.utils import timezone
+
+from accounts.models import Productor
+from .choices import CorteTabaco
+
+INPUT = {'class': 'form-control form-control-lg'}
+SELECT = {'class': 'form-select form-select-lg'}
 
 
-class SolicitudTurnoForm(forms.ModelForm):
-    """
-    Formulario del productor tabacalero para solicitar turnos de entrega.
-    """
-    class Meta:
-        model = Turno
-        fields = [
-            'empresa',
-            'kilos_estimados',
-            'patente_vehiculo',
-            'fecha_entrega',
-            'franja_horaria',
-            'observaciones',
-        ]
-        widgets = {
-            'empresa': forms.Select(attrs={
-                'class': 'form-select form-select-lg',
-                'id': 'id_empresa',
-            }),
-            'kilos_estimados': forms.NumberInput(attrs={
-                'class': 'form-control form-control-lg',
-                'placeholder': 'Ej. 12000',
-                'min': '100',
-                'step': '50',
-                'id': 'id_kilos_estimados',
-            }),
-            'patente_vehiculo': forms.TextInput(attrs={
-                'class': 'form-control form-control-lg text-uppercase',
-                'placeholder': 'Ej. AE123CD o AB123',
-                'id': 'id_patente_vehiculo',
-            }),
-            'fecha_entrega': forms.DateInput(attrs={
-                'class': 'form-control form-control-lg',
-                'type': 'date',
-                'id': 'id_fecha_entrega',
-            }),
-            'franja_horaria': forms.Select(attrs={
-                'class': 'form-select form-select-lg',
-                'id': 'id_franja_horaria',
-            }),
-            'observaciones': forms.Textarea(attrs={
-                'class': 'form-control',
-                'rows': 2,
-                'placeholder': 'Observaciones opcionales (tipo de tabaco Burley/Virginia, tipo de bultos, etc.)',
-            }),
-        }
+class DatosTurnoForm(forms.Form):
+    """Campos comunes a la solicitud (productor) y la asignación (recorredor)."""
+    kilos_estimados = forms.IntegerField(
+        label='Kilos estimados', min_value=1,
+        widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000', 'step': '50'}),
+    )
+    corte_tabaco = forms.ChoiceField(
+        label='Corte de tabaco', choices=CorteTabaco.choices, widget=forms.Select(attrs=SELECT),
+    )
+    patente_vehiculo = forms.CharField(
+        label='Patente del vehículo', max_length=20,
+        widget=forms.TextInput(attrs={**INPUT, 'class': INPUT['class'] + ' text-uppercase', 'placeholder': 'Ej. AE123CD'}),
+    )
+    fecha_entrega = forms.DateField(
+        label='Fecha de entrega',
+        widget=forms.DateInput(attrs={**INPUT, 'type': 'date'}, format='%Y-%m-%d'),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Solo mostrar empresas activas
-        self.fields['empresa'].queryset = EmpresaAcopio.objects.filter(activa=True)
-        self.fields['empresa'].empty_label = "Seleccione la Empresa Compradora / Acopio"
-        
-        # Establecer fecha mínima como hoy
-        hoy_str = date.today().strftime('%Y-%m-%d')
-        self.fields['fecha_entrega'].widget.attrs['min'] = hoy_str
+        self.fields['fecha_entrega'].widget.attrs['min'] = timezone.localdate().isoformat()
 
     def clean_fecha_entrega(self):
-        fecha = self.cleaned_data.get('fecha_entrega')
-        if fecha and fecha < date.today():
-            raise forms.ValidationError("La fecha de entrega no puede ser anterior al día de hoy.")
+        fecha = self.cleaned_data['fecha_entrega']
+        if fecha < timezone.localdate():
+            raise forms.ValidationError('La fecha de entrega no puede ser anterior a hoy.')
         return fecha
 
-    def clean_kilos_estimados(self):
-        kilos = self.cleaned_data.get('kilos_estimados')
-        if kilos and kilos <= 0:
-            raise forms.ValidationError("La cantidad de kilos estimados debe ser superior a 0.")
-        if kilos and kilos > 250000:
-            raise forms.ValidationError("La cantidad declarada excede la capacidad total de un centro de acopio.")
-        return kilos
 
+class SolicitudTurnoForm(DatosTurnoForm):
+    """El productor elige empresa, día, kilos y corte; la franja la asigna el sistema."""
+    empresa = forms.ModelChoiceField(
+        label='Empresa compradora', queryset=None, empty_label='Seleccione la empresa',
+        widget=forms.Select(attrs=SELECT),
+    )
+    field_order = ['empresa', 'fecha_entrega', 'kilos_estimados', 'corte_tabaco', 'patente_vehiculo']
+
+    def __init__(self, *args, empresas, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['empresa'].queryset = empresas
+
+
+class AsignarTurnoForm(DatosTurnoForm):
+    """El recorredor asigna un turno a un productor con cupo en su empresa."""
+    productor = forms.ModelChoiceField(
+        label='Productor', queryset=Productor.objects.none(), empty_label='Seleccione el productor',
+        widget=forms.Select(attrs=SELECT),
+    )
+    field_order = ['productor', 'fecha_entrega', 'kilos_estimados', 'corte_tabaco', 'patente_vehiculo']
+
+    def __init__(self, *args, empresa, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['productor'].queryset = (
+            Productor.objects.filter(cupos__recorredor__empresa_asignada=empresa).distinct()
+        )
+        self.fields['productor'].label_from_instance = lambda p: f'{p.get_nombre_completo()} · {p.cuit_dni}'
+
+
+class CancelacionForm(forms.Form):
+    mensaje = forms.CharField(
+        label='Motivo de la cancelación', required=False, max_length=500,
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3,
+                                     'placeholder': 'Explique por qué cancela el turno'}),
+    )
+
+
+class ConvocatoriaForm(forms.Form):
+    """EmpresaAcopio.enviar_aviso(corte_tabaco, kilos, mensaje)"""
+    corte_tabaco = forms.ChoiceField(label='Corte solicitado', choices=CorteTabaco.choices,
+                                     widget=forms.Select(attrs={'class': 'form-select'}))
+    kilos = forms.IntegerField(label='Kilos buscados', min_value=1,
+                               widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '500'}))
+    mensaje = forms.CharField(label='Mensaje', required=False, max_length=500,
+                              widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2,
+                                                           'placeholder': 'Opcional'}))

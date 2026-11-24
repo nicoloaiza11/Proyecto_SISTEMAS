@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Asignar Turno{% endblock %}
+
+{% block content %}
+<div class="container pb-5" style="max-width: 760px;">
+  <span class="section-eyebrow"><i class="bi bi-calendar2-plus me-1"></i> Recorredor · {{ empresa.nombre }}</span>
+  <h1 class="h2 mb-1">Asignar Turno</h1>
+  <p class="text-muted small mb-4">
+    El turno queda confirmado al instante y se emite el comprobante. El sistema asigna la primera franja con lugar
+    desde las 06:00 hs, aunque el productor tenga restricciones por incumplimientos.
+  </p>
+
+  <div class="card-soltat p-4 shadow-sm">
+    {% include 'turnos/_form_errors.html' %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="row">
+        <div class="col-md-7">{% include 'turnos/_field.html' with field=form.productor %}</div>
+        <div class="col-md-5">{% include 'turnos/_field.html' with field=form.fecha_entrega %}</div>
+        <div class="col-md-6">{% include 'turnos/_field.html' with field=form.kilos_estimados %}</div>
+        <div class="col-md-6">{% include 'turnos/_field.html' with field=form.corte_tabaco %}</div>
+        <div class="col-md-6">{% include 'turnos/_field.html' with field=form.patente_vehiculo %}</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{% url 'turnos:panel_recorredor' %}" class="btn btn-outline-soltat">Volver</a>
+        <button type="submit" class="btn btn-primary-soltat"><i class="bi bi-check2-circle me-1"></i> Asignar y confirmar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

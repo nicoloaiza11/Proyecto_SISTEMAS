@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Cancelar Turno{% endblock %}
+
+{% block content %}
+<div class="container pb-5" style="max-width: 640px;">
+  <span class="section-eyebrow"><i class="bi bi-x-circle me-1"></i> Portal del Productor</span>
+  <h1 class="h3 mb-3">Cancelar turno {{ turno.codigo }}</h1>
+
+  <div class="card-soltat p-4 shadow-sm">
+    <dl class="row small mb-3">
+      <dt class="col-5">Empresa</dt><dd class="col-7">{{ turno.empresa.nombre }}</dd>
+      <dt class="col-5">Fecha y franja</dt><dd class="col-7">{{ turno.fecha_entrega|date:"d/m/Y" }} · {{ turno.franja_horaria }} hs</dd>
+      <dt class="col-5">Kilos</dt><dd class="col-7">{{ turno.kilos_estimados|intcomma }} kg · {{ turno.get_corte_tabaco_display }}</dd>
+      <dt class="col-5">Estado</dt><dd class="col-7"><span class="badge-soltat {{ turno.badge_class }}">{{ turno.get_estado_display }}</span></dd>
+    </dl>
+
+    {% if requiere_motivo %}
+      <div class="alert alert-warning small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Este turno ya está <strong>confirmado</strong>. Cancelarlo cuenta como incumplimiento y puede restringir sus próximos turnos.
+        Indique el motivo: se lo enviará a la empresa por WhatsApp.
+      </div>
+    {% endif %}
+
+    {% include 'turnos/_form_errors.html' %}
+    <form method="post">
+      {% csrf_token %}
+      {% if requiere_motivo %}{% include 'turnos/_field.html' with field=form.mensaje %}{% endif %}
+      <div class="d-flex gap-2">
+        <a href="{{ volver }}" class="btn btn-outline-soltat">Volver</a>
+        <button type="submit" class="btn btn-danger"><i class="bi bi-x-circle me-1"></i> Cancelar turno</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

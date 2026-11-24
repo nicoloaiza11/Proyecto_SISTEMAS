@@ -688,6 +688,12 @@ body.hide-proto-markers .proto-only-inline {
   border: 1px solid #F3C2BD;
 }
 
+.badge-pendiente {
+  background-color: #FFF7E0;
+  color: #7D580C;
+  border: 1px dashed rgba(214, 168, 79, 0.6);
+}
+
 /* ==========================================================================
    9. SELECTOR TÁCTIL DE FRANJAS HORARIAS (PORTAL PRODUCTOR)
    ========================================================================== */

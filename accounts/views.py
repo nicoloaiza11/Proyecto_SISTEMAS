@@ -1,96 +1,47 @@
-from functools import wraps
-from django.shortcuts import render, redirect
+from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib import messages
+from django.shortcuts import redirect, render
+
 from .forms import LoginForm
-from .models import CustomUser
 
-
-def productor_required(view_func):
-    """
-    Decorador para restringir acceso exclusivamente a usuarios con rol 'productor'
-    o administradores.
-    """
-    @wraps(view_func)
-    def _wrapped_view(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')
-        if request.user.rol == CustomUser.ROL_PRODUCTOR or request.user.is_superuser:
-            return view_func(request, *args, **kwargs)
-        messages.warning(
-            request,
-            "Su perfil no tiene permisos de Productor. Ha sido redirigido al panel correspondiente."
-        )
-        return redirect('turnos:panel_empresa')
-    return _wrapped_view
-
-
-def empresa_required(view_func):
-    """
-    Decorador para restringir acceso exclusivamente a usuarios con rol 'empresa'
-    o administradores.
-    """
-    @wraps(view_func)
-    def _wrapped_view(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')
-        if request.user.rol == CustomUser.ROL_EMPRESA or request.user.is_superuser:
-            return view_func(request, *args, **kwargs)
-        messages.warning(
-            request,
-            "Su perfil no tiene permisos de Empresa de Acopio. Ha sido redirigido a sus turnos."
-        )
-        return redirect('turnos:mis_turnos')
-    return _wrapped_view
+# Pantalla de inicio de cada tipo de usuario
+INICIO_POR_TIPO = {
+    'productor': 'turnos:mis_turnos',
+    'recorredor': 'turnos:panel_recorredor',
+    'operadoracopio': 'turnos:panel_operador',
+    'empresaacopio': 'turnos:panel_empresa',
+}
 
 
 def login_view(request):
-    """
-    Vista de autenticación personalizada SOLTAT.
-    Si el usuario ya está autenticado, lo redirige según su rol.
-    """
     if request.user.is_authenticated:
         return redirect('login_redirect')
-
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
             user = form.cleaned_data['user']
             login(request, user)
-            messages.success(
-                request,
-                f"Bienvenido/a {user.razon_social or user.get_full_name() or user.username} al sistema SOLTAT."
-            )
+            messages.success(request, f'Bienvenido/a {user.get_nombre_completo()} al sistema SOLTAT.')
             return redirect('login_redirect')
     else:
         form = LoginForm()
-
     return render(request, 'accounts/login.html', {'form': form})
 
 
 @login_required
 def login_redirect_view(request):
-    """
-    Redirige al usuario a la vista correspondiente según su rol:
-    - 'productor' -> 'turnos:mis_turnos' (pantalla previa con turnos asignados y botón a reservar)
-    - 'empresa' -> 'panel-empresa'
-    """
-    if request.user.rol == CustomUser.ROL_PRODUCTOR:
-        return redirect('turnos:mis_turnos')
-    elif request.user.rol == CustomUser.ROL_EMPRESA:
-        return redirect('turnos:panel_empresa')
-    elif request.user.is_superuser:
-        # Administrador general: acceso prioritario al panel de acopio
-        return redirect('turnos:panel_empresa')
-    
-    return redirect('turnos:mis_turnos')
+    """Lleva a cada usuario a su pantalla según su tipo."""
+    destino = INICIO_POR_TIPO.get(request.user.tipo)
+    if destino:
+        return redirect(destino)
+    if request.user.es_administrador:
+        return redirect('admin:index')
+    logout(request)
+    messages.error(request, 'Su usuario no tiene un perfil asignado. Contacte al administrador.')
+    return redirect('login')
 
 
 def logout_view(request):
-    """
-    Cierra la sesión y redirige al login sin mensajes que desfasen la pantalla.
-    """
     logout(request)
     return redirect('login')
-

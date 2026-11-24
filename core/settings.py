@@ -97,7 +97,7 @@ else:
     }
 
 # Modelo de Usuario Personalizado
-AUTH_USER_MODEL = 'accounts.CustomUser'
+AUTH_USER_MODEL = 'accounts.Usuario'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

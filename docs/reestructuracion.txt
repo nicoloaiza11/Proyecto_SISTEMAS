@@ -1,0 +1,311 @@
+==============================================================================
+SOLTAT - REESTRUCTURACIÓN DEL PROYECTO SEGÚN EL DIAGRAMA DE CLASES
+==============================================================================
+Fecha: 24/11/2026
+Base: rama main, commit dc43aaf
+Fuentes: "Diagrama de clases.drawio.xml" y "Avance del proyecto.pdf"
+Estado: cambios sin commitear, pendientes de revisión del equipo.
+
+
+------------------------------------------------------------------------------
+1. RESUMEN
+------------------------------------------------------------------------------
+Se reestructuró el proyecto Django para que siga el diagrama de clases:
+  - Usuario como clase base, con cinco tipos de usuario.
+  - Entidades nuevas: CupoProductor, RegistroOperador y Comprobante.
+  - Un solo corte de tabaco por turno.
+  - Flujo de estados PENDIENTE -> CONFIRMADO -> EN_PLAYA -> DESCARGADO (o CANCELADO).
+
+Además se agregaron:
+  - Asignación automática de franjas horarias.
+  - Cupos de temporada por productor.
+  - Un modelo de premios y castigos según el cumplimiento del productor.
+  - Avisos por WhatsApp.
+
+La base de datos y las migraciones se rehicieron desde cero, con datos de prueba nuevos.
+Se actualizó Django de 5.1 a 5.2 (LTS) para que funcione con Python 3.14.
+
+
+------------------------------------------------------------------------------
+2. DECISIONES TOMADAS (resolución de ambigüedades)
+------------------------------------------------------------------------------
+Usuarios y empresas
+  - EmpresaAcopio extiende Usuario: la empresa tiene su propio login.
+  - El Operador de acopio trabaja con los turnos de todas las empresas del
+    centro de Perico.
+  - El Administrador gestiona usuarios desde el panel de Django (/admin).
+
+Turnos
+  - Los pueden crear el productor y el recorredor:
+      * Si lo solicita el productor, queda PENDIENTE hasta que el recorredor
+        de la empresa lo confirma.
+      * Si lo asigna el recorredor, nace CONFIRMADO.
+  - Un solo corte de tabaco por turno: BAJERA, MEDIANA o SUPERIOR.
+
+Precios y comprobante
+  - Se eliminaron las clases A/B/C/D y su tabla de precios en USD.
+  - El precio por kg es opcional y lo carga a mano el operador en el Comprobante.
+  - El Comprobante se emite al confirmar el turno. El peso real y el precio
+    se completan en la descarga.
+  - El RegistroOperador registra el pesaje y copia el peso real y el corte al Turno.
+
+Capacidad y franjas
+  - La capacidad se controla solo por empresa.
+  - Capacidad diaria entre 200.000 y 300.000 kg.
+  - Capacidad por franja configurable por empresa. Es una excepción al
+    diagrama, acordada con el equipo.
+  - Franjas de 2 horas de 06:00 a 22:00 (8 franjas). El sistema asigna la
+    franja automáticamente.
+
+Cupo de temporada
+  - CupoProductor.cupo_maximo son los kilos totales que el productor puede
+    entregar a esa empresa en toda la temporada.
+
+Convocatoria y avisos
+  - corte_solicitado y enviar_aviso funcionan como convocatoria a los
+    productores con cupo. No bloquean turnos de otros cortes.
+  - Los avisos se envían por WhatsApp con enlaces wa.me: el sistema arma el
+    mensaje y el usuario solo toca Enviar. No usa una API paga.
+  - Cancelación:
+      * Un turno PENDIENTE se cancela libremente.
+      * Un turno CONFIRMADO exige un motivo, que se envía por WhatsApp a la empresa.
+
+Alcance
+  - Se eliminó todo lo que no estaba en el diagrama: hora_salida_origen,
+    observaciones, razon_social, y cuit y direccion de la empresa.
+  - Los tableros gerenciales se redujeron a lo del diagrama: rendimiento del
+    productor y tiempos de espera y de ciclo del turno.
+  - El código QR y las alertas meteorológicas del PDF quedan para más adelante.
+
+
+------------------------------------------------------------------------------
+3. MODELO DE DATOS
+------------------------------------------------------------------------------
+Se implementa con herencia multitabla de Django: cada subclase tiene su tabla,
+enlazada uno a uno con accounts_usuario.
+
+accounts (usuarios)
+  Usuario          username, password, cuit_dni (único), telefono
+                   Métodos: iniciar_sesion(), cerrar_sesion(), get_nombre_completo()
+
+  Productor        solicitar_turno(), consultar_disponibilidad(), cancelar_turno(),
+                   cancelar_turno_confirmado(mensaje), consultar_mis_turnos(),
+                   consultar_rendimiento(), obtener_remanente(turno)
+
+  OperadorAcopio   registrar_ingreso_garita(turno), registrar_pesaje_y_descarga()
+
+  Recorredor       empresa_asignada
+                   Métodos: asignar_turno(), confirmar_turno(), cancelar_turno()
+
+  Administrador    crear_usuario(), eliminar_usuario(), modificar_usuario()
+                   Siempre tiene acceso a /admin.
+
+  EmpresaAcopio    nombre, capacidad_diaria_kg, capacidad_franja_kg (*), activa,
+                   corte_solicitado
+                   Métodos: verificar_cupo_disponible(), calcular_kilos_ocupados(),
+                   obtener_remanente(), enviar_aviso()
+
+  (*) Atributo agregado al diagrama, a pedido del equipo.
+
+turnos
+  CupoProductor    cupo_maximo, productor, recorredor
+                   La empresa del cupo es la del recorredor.
+
+  Turno            codigo (SLT-AAAAMMDD-XXXX), productor, empresa, recorredor,
+                   kilos_estimados, patente_vehiculo, fecha_entrega, franja_horaria,
+                   estado, hora_arribo_playa, hora_descarga, kilos_reales,
+                   corte_tabaco (uno solo)
+                   Métodos: cambiar_estado(), liquidar_descarga(),
+                   calcular_tiempo_espera(), calcular_tiempo_ciclo_total(),
+                   calcular_perdida_merma()
+
+  RegistroOperador turno (0..1), operador, peso_acordado, peso_real, corte_tabaco
+
+  Comprobante      turno (1), codigo_turno, empresa, fecha_entrega, peso_real,
+                   precio, corte_tabaco
+
+Enumeraciones (turnos/choices.py)
+  EstadoTurno      PENDIENTE, CONFIRMADO, EN_PLAYA, DESCARGADO, CANCELADO
+  CorteTabaco      BAJERA, MEDIANA, SUPERIOR
+
+Transiciones de estado permitidas
+  PENDIENTE  -> CONFIRMADO | CANCELADO
+  CONFIRMADO -> EN_PLAYA | CANCELADO
+  EN_PLAYA   -> DESCARGADO
+
+
+------------------------------------------------------------------------------
+4. REGLAS DE NEGOCIO (turnos/services.py)
+------------------------------------------------------------------------------
+Asignación de franja
+  - Elige la primera franja con lugar para los kilos pedidos, a partir de la
+    hora que permite el nivel del productor.
+  - Nunca supera la capacidad de la franja ni la capacidad diaria.
+  - Si la fecha es hoy, saltea las franjas que ya empezaron.
+  - Ocupan lugar los turnos no cancelados: con los kilos reales si ya se
+    descargaron, o con los estimados si no.
+  - Un turno no puede superar la capacidad de una franja.
+  - La fila de la empresa se bloquea durante la reserva (SELECT ... FOR UPDATE)
+    para evitar sobrecupos con solicitudes simultáneas.
+
+Cupo de temporada
+  - El productor solo puede pedir turnos con empresas donde tiene cupo.
+  - Los kilos de los turnos no cancelados se descuentan del cupo.
+
+Premios y castigos (últimos 90 días)
+  Cuentan como incumplimiento:
+    - No se presentó: turno CONFIRMADO con fecha pasada.
+    - Canceló un turno confirmado: turno CANCELADO que conserva su comprobante.
+    - Desvío de kilos mayor al 20 % entre los reales y los estimados.
+
+  Niveles:
+    0 incumplimientos -> BUENO     franjas desde las 06:00
+    1                 -> REGULAR   franjas desde las 12:00
+    2                 -> MALO      franjas desde las 18:00
+    3 o más           -> BLOQUEADO 30 días desde el último incumplimiento.
+                                   No puede solicitar turnos; solo el recorredor
+                                   puede asignarle. Pasado el plazo, queda en MALO.
+
+  Al asignar un turno, el recorredor puede usar cualquier franja, aunque el
+  productor esté penalizado.
+
+  Cancelaciones del recorredor: el modelo no guarda quién canceló un turno.
+  Por eso, cuando cancela el recorredor se anula (borra) el comprobante y no
+  cuenta como incumplimiento del productor.
+
+  Los parámetros (90 días, 20 %, 3 incumplimientos, 30 días de bloqueo y la
+  hora mínima de cada nivel) están al principio de turnos/services.py.
+
+
+------------------------------------------------------------------------------
+5. PANTALLAS POR TIPO DE USUARIO
+------------------------------------------------------------------------------
+Productor
+  - Mis Turnos: activos, nivel de cumplimiento, cupos y botón para cancelar.
+  - Solicitar Turno: empresa, fecha, kilos, corte y patente. Muestra la
+    ocupación del día por franja.
+  - Historial: todos los turnos, con filtro por estado.
+  - Rendimiento: entregas, desvío, espera, ciclo total y presentismo.
+  - Cancelar turno: pide el motivo si el turno ya estaba confirmado.
+
+Recorredor
+  - Solicitudes y Turnos: confirmar o rechazar pendientes, cancelar
+    confirmados y ver los cupos que asignó.
+  - Asignar Turno: el turno nace confirmado.
+
+Operador de acopio
+  - Garita y Báscula: turnos del día de todas las empresas.
+  - Registrar ingreso en garita.
+  - Registrar pesaje: peso real, corte recibido y precio opcional.
+
+Empresa de acopio
+  - Ocupación del día y por franja, y los turnos de la fecha.
+  - Publicar una convocatoria (corte, kilos y mensaje).
+
+Administrador
+  - /admin: alta, baja y modificación de cada tipo de usuario, cupos, turnos
+    y comprobantes.
+
+Comunes
+  - Comprobante del turno, con permisos según el usuario.
+  - Pantalla de avisos de WhatsApp.
+  - API /api/disponibilidad/, que devuelve la ocupación por empresa y fecha.
+
+
+------------------------------------------------------------------------------
+6. ARCHIVOS MODIFICADOS, NUEVOS Y ELIMINADOS
+------------------------------------------------------------------------------
+Modificados
+  accounts/models.py         Usuario y sus 5 subclases
+  accounts/views.py          login y redirección según el tipo de usuario
+  accounts/forms.py          login y formularios de /admin
+  accounts/admin.py          un panel por cada tipo de usuario
+  turnos/models.py           CupoProductor, Turno, RegistroOperador, Comprobante
+  turnos/services.py         toda la lógica de negocio
+  turnos/views.py            vistas de los 4 portales
+  turnos/forms.py            solicitud, asignación, cancelación, convocatoria
+  turnos/urls.py             rutas nuevas
+  turnos/admin.py
+  turnos/tests.py            32 tests
+  turnos/management/commands/seed_data.py   datos de prueba nuevos (--reset)
+  templates/base.html        menú según el tipo de usuario
+  templates/turnos/*.html    mis_turnos, registros_historicos,
+                             solicitar_turno, comprobante
+  static/css/custom.css      estilo del estado "Pendiente"
+  core/settings.py           AUTH_USER_MODEL = 'accounts.Usuario'
+  requirements.txt           Django>=5.2.8,<6.0
+  sql/pgadmin4_soltat.sql    esquema nuevo y 5 consultas para pgAdmin
+  README.md                  usuarios de prueba, modelo y reglas
+  db.sqlite3                 base regenerada con datos de prueba
+
+Nuevos
+  accounts/decorators.py     acceso restringido según el tipo de usuario
+  turnos/choices.py          EstadoTurno, CorteTabaco, franjas
+  turnos/whatsapp.py         enlaces wa.me
+  templates/turnos/          recorredor_panel, asignar_turno, operador_panel,
+                             empresa_panel, cancelar_turno, rendimiento, avisos,
+                             y los fragmentos _cumplimiento, _cupos, _field,
+                             _form_errors
+  docs/reestructuracion.txt  este documento
+
+Eliminados
+  turnos/analytics.py                      tableros gerenciales (SAD)
+  templates/acopio/gerencia_empresa.html
+  templates/acopio/panel_empresa.html
+  templates/turnos/gerencia_productor.html
+  Exportación a CSV y "informar salida de finca"
+  Migraciones anteriores, reemplazadas por accounts 0001 y turnos 0001
+
+
+------------------------------------------------------------------------------
+7. USUARIOS DE PRUEBA (seed_data)
+------------------------------------------------------------------------------
+Se ingresa con el DNI/CUIT y la contraseña.
+
+  Administrador              20000000001   admin123
+  Empresa Cooperativa        30554433221   empresa123
+  Empresa Alliance One       30665544332   empresa123
+  Empresa Massalin           30776655443   empresa123
+  Recorredor Cooperativa     20111111111   recorredor123
+  Recorredor Alliance One    20111111112   recorredor123
+  Recorredor Massalin        20111111113   recorredor123
+  Operador de acopio         20222222222   operador123
+  Productor (nivel bueno)    20345678901   productor123
+  Productor (nivel regular)  20287654321   productor123
+  Productor (bloqueado)      20312233445   productor123
+  Productor (nivel bueno)    27298877663   productor123
+
+Para volver a cargar los datos de prueba:
+  python manage.py seed_data --reset
+
+
+------------------------------------------------------------------------------
+8. VERIFICACIÓN
+------------------------------------------------------------------------------
+  - python manage.py check: sin problemas.
+  - python manage.py test turnos: 32 tests, todos pasan.
+  - Recorrido de todas las pantallas con cada tipo de usuario, incluido
+    /admin: todas responden correctamente.
+  - Login del productor probado en el navegador.
+  - El script SQL NO se ejecutó contra PostgreSQL. Se escribió a mano porque
+    no había credenciales del servidor local.
+
+
+------------------------------------------------------------------------------
+9. PENDIENTES Y PUNTOS A TENER EN CUENTA
+------------------------------------------------------------------------------
+  - Al hacer pull, cada integrante debe correr:
+        pip install -r requirements.txt
+    para pasar a Django 5.2.
+  - Variables de PostgreSQL: .env.example usa DB_NAME/DB_USER/..., pero
+    settings.py lee POSTGRES_DB/POSTGRES_USER/... Ya pasaba antes de la
+    reestructuración y no se corrigió.
+  - WhatsApp en Argentina: para celulares, wa.me suele requerir el 9 después
+    del 54 (ej. +54 9 388 ...). Se usa el teléfono tal como está cargado.
+  - Los cupos de temporada se cargan desde /admin. No hay pantalla propia
+    para el recorredor.
+  - Quedan para más adelante: código QR en el comprobante y alertas
+    meteorológicas (están en el PDF, no en el diagrama).
+  - Los cambios no están commiteados. Se recomienda hacer el commit en una
+    rama aparte (no en main) y revisarlo con el equipo.
+==============================================================================

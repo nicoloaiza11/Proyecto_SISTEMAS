@@ -57,41 +57,24 @@
       <div class="collapse navbar-collapse" id="navbarSoltatNav">
         <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-1">
           {% if user.is_authenticated %}
-            {% if user.es_productor or user.is_superuser %}
-              <li class="nav-item">
-                <a class="nav-link {% if request.resolver_match.url_name == 'mis_turnos' %}active{% endif %}" href="{% url 'turnos:mis_turnos' %}">
-                  <i class="bi bi-calendar-check me-1"></i> Mis Turnos
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link {% if request.resolver_match.url_name == 'registros_historicos' or request.resolver_match.url_name == 'historial_turnos' %}active{% endif %}" href="{% url 'turnos:registros_historicos' %}">
-                  <i class="bi bi-clock-history me-1"></i> Registros Históricos
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link {% if request.resolver_match.url_name == 'solicitar_turno' %}active{% endif %}" href="{% url 'turnos:solicitar_turno' %}">
-                  <i class="bi bi-calendar2-plus me-1"></i> Reservar Turno
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link {% if request.resolver_match.url_name == 'gerencia_productor' %}active{% endif %}" href="{% url 'turnos:gerencia_productor' %}">
-                  <i class="bi bi-bar-chart-line me-1"></i> Rendimiento y Tiempos
-                </a>
-              </li>
+            {% with rn=request.resolver_match.url_name %}
+            {% if user.es_productor %}
+              <li class="nav-item"><a class="nav-link {% if rn == 'mis_turnos' %}active{% endif %}" href="{% url 'turnos:mis_turnos' %}"><i class="bi bi-calendar-check me-1"></i> Mis Turnos</a></li>
+              <li class="nav-item"><a class="nav-link {% if rn == 'solicitar_turno' %}active{% endif %}" href="{% url 'turnos:solicitar_turno' %}"><i class="bi bi-calendar2-plus me-1"></i> Solicitar Turno</a></li>
+              <li class="nav-item"><a class="nav-link {% if rn == 'registros_historicos' %}active{% endif %}" href="{% url 'turnos:registros_historicos' %}"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
+              <li class="nav-item"><a class="nav-link {% if rn == 'rendimiento' %}active{% endif %}" href="{% url 'turnos:rendimiento' %}"><i class="bi bi-bar-chart-line me-1"></i> Rendimiento</a></li>
+            {% elif user.es_recorredor %}
+              <li class="nav-item"><a class="nav-link {% if rn == 'panel_recorredor' %}active{% endif %}" href="{% url 'turnos:panel_recorredor' %}"><i class="bi bi-inboxes me-1"></i> Solicitudes y Turnos</a></li>
+              <li class="nav-item"><a class="nav-link {% if rn == 'asignar_turno' %}active{% endif %}" href="{% url 'turnos:asignar_turno' %}"><i class="bi bi-calendar2-plus me-1"></i> Asignar Turno</a></li>
+            {% elif user.es_operador %}
+              <li class="nav-item"><a class="nav-link {% if rn == 'panel_operador' %}active{% endif %}" href="{% url 'turnos:panel_operador' %}"><i class="bi bi-truck me-1"></i> Garita y Báscula</a></li>
+            {% elif user.es_empresa %}
+              <li class="nav-item"><a class="nav-link {% if rn == 'panel_empresa' %}active{% endif %}" href="{% url 'turnos:panel_empresa' %}"><i class="bi bi-layout-wtf me-1"></i> Ocupación y Convocatorias</a></li>
             {% endif %}
-
-            {% if user.es_empresa or user.is_superuser %}
-              <li class="nav-item">
-                <a class="nav-link {% if request.resolver_match.url_name == 'panel_empresa' %}active{% endif %}" href="{% url 'turnos:panel_empresa' %}">
-                  <i class="bi bi-layout-wtf me-1"></i> Mesa de Recepción y Playa
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link {% if request.resolver_match.url_name == 'gerencia_empresa' %}active{% endif %}" href="{% url 'turnos:gerencia_empresa' %}">
-                  <i class="bi bi-graph-up-arrow me-1"></i> Inteligencia Gerencial (SAD)
-                </a>
-              </li>
+            {% if user.es_administrador %}
+              <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}"><i class="bi bi-gear me-1"></i> Administración</a></li>
             {% endif %}
+            {% endwith %}
           {% endif %}
         </ul>
 
@@ -111,8 +94,8 @@
             <div class="user-session-chip">
               <span class="role-dot"></span>
               <div>
-                <strong class="d-inline-block">{{ user.razon_social|default:user.username|truncatechars:28 }}</strong>
-                <span class="text-white-50 ms-1">· {{ user.get_rol_display }}</span>
+                <strong class="d-inline-block">{{ user.get_nombre_completo|truncatechars:28 }}</strong>
+                <span class="text-white-50 ms-1">· {{ user.tipo_display }}</span>
               </div>
             </div>
             <a href="{% url 'logout' %}" class="btn btn-sm btn-outline-light px-3" style="border-radius: 8px; font-size: 0.82rem;">
