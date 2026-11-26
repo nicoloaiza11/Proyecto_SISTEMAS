@@ -46,7 +46,7 @@
             <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
             <td>{{ t.empresa.nombre }}</td>
             <td>{{ t.productor.get_nombre_completo }}</td>
-            <td class="font-monospace">{{ t.patente_vehiculo }}</td>
+            <td class="font-monospace">{{ t.patente_vehiculo|default:"—" }}</td>
             <td>{{ t.get_corte_tabaco_display }}</td>
             <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
             <td class="text-center">
@@ -58,9 +58,18 @@
                 <form method="post" action="{% url 'turnos:registrar_ingreso' t.id %}" class="m-0">
                   {% csrf_token %}
                   <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                  <button class="btn btn-sm btn-primary-soltat" {% if not es_hoy %}disabled title="Solo se registran ingresos del día"{% endif %}>
-                    <i class="bi bi-box-arrow-in-right me-1"></i>Registrar ingreso en garita
-                  </button>
+                  {% if not t.patente_vehiculo %}
+                    <div class="input-group input-group-sm">
+                      <input type="text" name="patente_vehiculo" class="form-control text-uppercase" placeholder="Patente (ej. AE123CD)" maxlength="20" required {% if not es_hoy %}disabled{% endif %}>
+                      <button class="btn btn-primary-soltat" {% if not es_hoy %}disabled title="Solo se registran ingresos del día"{% endif %}>
+                        <i class="bi bi-box-arrow-in-right me-1"></i>Registrar ingreso
+                      </button>
+                    </div>
+                  {% else %}
+                    <button class="btn btn-sm btn-primary-soltat" {% if not es_hoy %}disabled title="Solo se registran ingresos del día"{% endif %}>
+                      <i class="bi bi-box-arrow-in-right me-1"></i>Registrar ingreso en garita
+                    </button>
+                  {% endif %}
                 </form>
               {% elif t.estado == 'EN_PLAYA' %}
                 <form method="post" action="{% url 'turnos:registrar_pesaje' t.id %}" class="m-0">

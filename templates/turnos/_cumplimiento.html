@@ -15,10 +15,12 @@
   <p class="small text-muted mb-0 mt-2">
     {% if cumplimiento.bloqueado %}
       No puede solicitar turnos hasta el <strong>{{ cumplimiento.bloqueado_hasta|date:"d/m/Y" }}</strong>. Solo el recorredor de su empresa puede asignarle turnos.
-    {% elif cumplimiento.nivel == 'BUENO' %}
-      Accede a todas las franjas desde las 06:00 hs.
+    {% elif cumplimiento.nivel == 'MALO' %}
+      Por incumplimientos recientes, sus turnos se asignan con al menos <strong>{{ cumplimiento.dias_demora }} días de demora</strong> (o al final de la agenda). Cumpla sus próximos turnos para mejorar su nivel.
+    {% elif cumplimiento.nivel == 'REGULAR' %}
+      Sin restricción horaria. Evite nuevos incumplimientos para mantener su prioridad de asignación.
     {% else %}
-      Accede a franjas desde las {{ cumplimiento.hora_minima|stringformat:"02d" }}:00 hs. Cumpla sus próximos turnos para mejorar su nivel.
+      Sin restricciones: accede a todas las franjas y fechas disponibles.
     {% endif %}
   </p>
   {% if cumplimiento.detalle %}

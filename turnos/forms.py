@@ -11,15 +11,16 @@ SELECT = {'class': 'form-select form-select-lg'}
 class DatosTurnoForm(forms.Form):
     """Campos comunes a la asignación (recorredor) y turnos con fecha."""
     kilos_estimados = forms.IntegerField(
-        label='Kilos estimados', min_value=1,
-        widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000', 'step': '50'}),
+        label='Kilos estimados', min_value=50,
+        widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000 (mín. 50)', 'step': '50', 'min': '50'}),
+        error_messages={'min_value': 'La cantidad mínima para solicitar un turno es de 50 kg.'},
     )
     corte_tabaco = forms.ChoiceField(
         label='Corte de tabaco', choices=CorteTabaco.choices, widget=forms.Select(attrs=SELECT),
     )
     patente_vehiculo = forms.CharField(
-        label='Patente del vehículo', max_length=20,
-        widget=forms.TextInput(attrs={**INPUT, 'class': INPUT['class'] + ' text-uppercase', 'placeholder': 'Ej. AE123CD'}),
+        label='Patente del vehículo', max_length=20, required=False,
+        widget=forms.TextInput(attrs={**INPUT, 'class': INPUT['class'] + ' text-uppercase', 'placeholder': 'Ej. AE123CD (opcional)'}),
     )
     fecha_entrega = forms.DateField(
         label='Fecha de entrega',
@@ -44,15 +45,16 @@ class SolicitudTurnoForm(forms.Form):
         widget=forms.Select(attrs=SELECT),
     )
     kilos_estimados = forms.IntegerField(
-        label='Kilos estimados', min_value=1,
-        widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000', 'step': '50'}),
+        label='Kilos estimados', min_value=50,
+        widget=forms.NumberInput(attrs={**INPUT, 'placeholder': 'Ej. 12000 (mín. 50)', 'step': '50', 'min': '50'}),
+        error_messages={'min_value': 'La cantidad mínima para solicitar un turno es de 50 kg.'},
     )
     corte_tabaco = forms.ChoiceField(
         label='Corte de tabaco', choices=CorteTabaco.choices, widget=forms.Select(attrs=SELECT),
     )
     patente_vehiculo = forms.CharField(
-        label='Patente del vehículo', max_length=20,
-        widget=forms.TextInput(attrs={**INPUT, 'class': INPUT['class'] + ' text-uppercase', 'placeholder': 'Ej. AE123CD'}),
+        label='Patente del vehículo', max_length=20, required=False,
+        widget=forms.TextInput(attrs={**INPUT, 'class': INPUT['class'] + ' text-uppercase', 'placeholder': 'Ej. AE123CD (opcional)'}),
     )
     field_order = ['empresa', 'kilos_estimados', 'corte_tabaco', 'patente_vehiculo']
 

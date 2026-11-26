@@ -35,8 +35,7 @@
               {% if t.fecha_entrega %}
                 <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span><span class="d-block text-muted small">{{ t.franja_horaria }} hs</span>
               {% else %}
-                <span class="badge bg-light text-secondary border"><i class="bi bi-magic me-1"></i>Asignación automática</span>
-                <span class="d-block text-muted small">Al confirmar</span>
+                <span class="badge bg-light text-secondary border">A confirmar</span>
               {% endif %}
             </td>
             <td>{{ t.get_corte_tabaco_display }}</td>

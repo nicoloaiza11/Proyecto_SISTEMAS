@@ -135,7 +135,7 @@ class Productor(Usuario):
         verbose_name = 'Productor'
         verbose_name_plural = 'Productores'
 
-    def solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo):
+    def solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo=''):
         from turnos import services
         return services.solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo)
 
@@ -172,9 +172,9 @@ class OperadorAcopio(Usuario):
         verbose_name = 'Operador de Acopio'
         verbose_name_plural = 'Operadores de Acopio'
 
-    def registrar_ingreso_garita(self, turno) -> None:
+    def registrar_ingreso_garita(self, turno, patente_vehiculo=None) -> None:
         from turnos import services
-        services.registrar_ingreso_garita(self, turno)
+        services.registrar_ingreso_garita(self, turno, patente_vehiculo=patente_vehiculo)
 
     def registrar_pesaje_y_descarga(self, turno, peso_real, corte_tabaco, precio=None):
         from turnos import services
