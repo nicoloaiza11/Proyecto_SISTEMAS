@@ -68,10 +68,11 @@ class Turno(models.Model):
         related_name='turnos', verbose_name='Recorredor'
     )
     kilos_estimados = models.PositiveIntegerField(verbose_name='Kilos estimados')
-    patente_vehiculo = models.CharField(max_length=20, verbose_name='Patente del vehículo')
+    patente_vehiculo = models.CharField(max_length=20, blank=True, default='', verbose_name='Patente del vehículo')
     fecha_entrega = models.DateField(null=True, blank=True, verbose_name='Fecha de entrega')
     franja_horaria = models.CharField(max_length=20, choices=FRANJAS_HORARIAS, null=True, blank=True, verbose_name='Franja horaria')
     fue_confirmado = models.BooleanField(default=False, verbose_name='Fue confirmado')
+    cancelado_por_ausencia = models.BooleanField(default=False, verbose_name='Cancelado por ausencia')
     estado = models.CharField(
         max_length=12, choices=EstadoTurno.choices, default=EstadoTurno.PENDIENTE, verbose_name='Estado'
     )
@@ -79,6 +80,20 @@ class Turno(models.Model):
     hora_descarga = models.DateTimeField(null=True, blank=True, verbose_name='Descarga')
     kilos_reales = models.PositiveIntegerField(null=True, blank=True, verbose_name='Kilos reales')
     corte_tabaco = models.CharField(max_length=10, choices=CorteTabaco.choices, verbose_name='Corte de tabaco')
+
+    # -----------------------------------------------------------
+    # Campos de pronóstico climático (Open-Meteo · Ciudad Perico)
+    # -----------------------------------------------------------
+    clima_datos = models.JSONField(
+        null=True, blank=True,
+        verbose_name='Datos climáticos (Open-Meteo)',
+        help_text='Snapshot del pronóstico para la fecha/hora del turno.'
+    )
+    clima_actualizado_el = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Clima actualizado el',
+        help_text='Timestamp de la última consulta exitosa a Open-Meteo.'
+    )
 
     class Meta:
         verbose_name = 'Turno'

@@ -15,7 +15,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Max, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -32,13 +32,14 @@ VENTANA_CUMPLIMIENTO_DIAS = 90   # Período que se evalúa
 UMBRAL_DESVIO_KILOS = 0.20       # Desvío de kilos que cuenta como incumplimiento (20 %)
 INCUMPLIMIENTOS_BLOQUEO = 3      # A partir de cuántos incumplimientos se bloquea
 DIAS_BLOQUEO = 30                # Duración del bloqueo desde el último incumplimiento
+DIAS_DEMORA_MALO = 5             # Días mínimos de demora para productores en nivel MALO
 
-# Nivel -> hora de la primera franja a la que puede acceder el productor
+# Nivel -> configuración de visualización y demora en días (sin restricción horaria)
 NIVELES = {
-    'BUENO': {'display': 'Bueno', 'hora_minima': 6, 'css': 'success'},
-    'REGULAR': {'display': 'Regular', 'hora_minima': 12, 'css': 'warning'},
-    'MALO': {'display': 'Malo', 'hora_minima': 18, 'css': 'danger'},
-    'BLOQUEADO': {'display': 'Bloqueado', 'hora_minima': None, 'css': 'dark'},
+    'BUENO': {'display': 'Bueno', 'hora_minima': 6, 'dias_demora': 0, 'css': 'success'},
+    'REGULAR': {'display': 'Regular', 'hora_minima': 6, 'dias_demora': 0, 'css': 'warning'},
+    'MALO': {'display': 'Malo', 'hora_minima': 6, 'dias_demora': DIAS_DEMORA_MALO, 'css': 'danger'},
+    'BLOQUEADO': {'display': 'Bloqueado', 'hora_minima': None, 'dias_demora': None, 'css': 'dark'},
 }
 
 
@@ -217,7 +218,7 @@ def incumplimientos(productor, hoy=None) -> list:
         if t.estado == EstadoTurno.CONFIRMADO:
             motivo = 'No se presentó'
         elif t.estado == EstadoTurno.CANCELADO:
-            motivo = 'Canceló un turno confirmado'
+            motivo = 'No se presentó (ausencia)' if t.cancelado_por_ausencia else 'Canceló un turno confirmado'
         elif t.desvio_pct is not None and abs(t.desvio_pct) > UMBRAL_DESVIO_KILOS * 100:
             motivo = f'Desvío de kilos de {t.desvio_pct:+.1f} %'
         else:
@@ -229,11 +230,11 @@ def incumplimientos(productor, hoy=None) -> list:
 
 def evaluar_cumplimiento(productor, hoy=None) -> dict:
     """
-    0 incumplimientos -> BUENO   (franjas desde las 06:00)
-    1                 -> REGULAR (desde las 12:00)
-    2                 -> MALO    (desde las 18:00)
+    0 incumplimientos -> BUENO     (sin restricciones)
+    1                 -> REGULAR   (sin restricción horaria)
+    2                 -> MALO      (turnos asignados >= 5 días después o al final de la agenda)
     3 o más           -> BLOQUEADO durante 30 días desde el último
-                         incumplimiento; pasado ese plazo, MALO.
+                                   incumplimiento; pasado ese plazo, MALO.
     """
     hoy = hoy or _hoy()
     lista = incumplimientos(productor, hoy)
@@ -258,6 +259,7 @@ def evaluar_cumplimiento(productor, hoy=None) -> dict:
         'nivel_display': datos['display'],
         'css': datos['css'],
         'hora_minima': datos['hora_minima'],
+        'dias_demora': datos['dias_demora'],
         'cantidad': cantidad,
         'detalle': lista,
         'bloqueado': nivel == 'BLOQUEADO',
@@ -314,8 +316,8 @@ def buscar_proxima_disponibilidad(empresa, kilos, hora_minima=6, desde_fecha=Non
 def _validar_datos_turno(empresa, kilos, corte_tabaco, patente_vehiculo, fecha_entrega):
     if not empresa.activa:
         raise TurnoError(f'{empresa.nombre} no está recibiendo tabaco en este momento.')
-    if kilos is None or kilos <= 0:
-        raise TurnoError('Los kilos estimados deben ser mayores a cero.')
+    if kilos is None or kilos < 50:
+        raise TurnoError('La cantidad mínima para solicitar un turno es de 50 kg.')
     if kilos > empresa.capacidad_franja_kg:
         raise TurnoError(
             f'Un turno no puede superar la capacidad de una franja de {empresa.nombre} '
@@ -323,8 +325,6 @@ def _validar_datos_turno(empresa, kilos, corte_tabaco, patente_vehiculo, fecha_e
         )
     if corte_tabaco not in CorteTabaco.values:
         raise TurnoError('Debe indicar un corte de tabaco válido.')
-    if not (patente_vehiculo or '').strip():
-        raise TurnoError('Debe indicar la patente del vehículo.')
     if fecha_entrega < _hoy():
         raise TurnoError('La fecha de entrega no puede ser anterior a hoy.')
 
@@ -364,7 +364,7 @@ def _crear_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo, fech
             empresa=empresa,
             recorredor=recorredor,
             kilos_estimados=kilos,
-            patente_vehiculo=patente_vehiculo.strip().upper(),
+            patente_vehiculo=(patente_vehiculo or '').strip().upper(),
             fecha_entrega=fecha_entrega,
             franja_horaria=franja,
             estado=estado,
@@ -376,7 +376,7 @@ def _crear_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo, fech
         return turno
 
 
-def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo) -> Turno:
+def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo='') -> Turno:
     """
     El productor solicita un turno sin elegir fecha: queda PENDIENTE hasta que lo confirme la empresa/recorredor.
     El sistema asignará automáticamente la fecha y franja al momento de la confirmación.
@@ -389,8 +389,8 @@ def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo) -
         )
     if not empresa.activa:
         raise TurnoError(f'{empresa.nombre} no está recibiendo tabaco en este momento.')
-    if kilos is None or kilos <= 0:
-        raise TurnoError('Los kilos estimados deben ser mayores a cero.')
+    if kilos is None or kilos < 50:
+        raise TurnoError('La cantidad mínima para solicitar un turno es de 50 kg.')
     if kilos > empresa.capacidad_franja_kg:
         raise TurnoError(
             f'Un turno no puede superar la capacidad de una franja de {empresa.nombre} '
@@ -398,8 +398,6 @@ def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo) -
         )
     if corte_tabaco not in CorteTabaco.values:
         raise TurnoError('Debe indicar un corte de tabaco válido.')
-    if not (patente_vehiculo or '').strip():
-        raise TurnoError('Debe indicar la patente del vehículo.')
 
     with transaction.atomic():
         empresa = EmpresaAcopio.objects.select_for_update().get(pk=empresa.pk)
@@ -419,7 +417,7 @@ def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo) -
             productor=productor,
             empresa=empresa,
             kilos_estimados=kilos,
-            patente_vehiculo=patente_vehiculo.strip().upper(),
+            patente_vehiculo=(patente_vehiculo or '').strip().upper(),
             corte_tabaco=corte_tabaco,
             fecha_entrega=None,
             franja_horaria=None,
@@ -452,14 +450,25 @@ def confirmar_turno(recorredor, turno) -> Turno:
             raise TurnoError(f'Solo se pueden confirmar turnos pendientes (estado actual: {turno.get_estado_display()}).')
 
         cumplimiento = evaluar_cumplimiento(turno.productor)
-        hora_minima = cumplimiento['hora_minima'] if cumplimiento['hora_minima'] is not None else 6
+        dias_demora = cumplimiento.get('dias_demora') or 0
+        desde_fecha = _hoy() + timedelta(days=dias_demora)
+
+        # Para nivel MALO: al menos 5 días después o al final de los turnos ya programados
+        if cumplimiento['nivel'] == 'MALO':
+            ultima_fecha = (
+                Turno.objects.filter(empresa=empresa, fecha_entrega__isnull=False)
+                .exclude(estado=EstadoTurno.CANCELADO)
+                .aggregate(ultima=Max('fecha_entrega'))['ultima']
+            )
+            if ultima_fecha and ultima_fecha > desde_fecha:
+                desde_fecha = ultima_fecha
 
         # Si el turno no tiene fecha o franja fijada, el sistema la busca y asigna automáticamente
         fecha_asignada = turno.fecha_entrega
         franja_asignada = turno.franja_horaria
         if not fecha_asignada or not franja_asignada:
             fecha_asignada, franja_asignada = buscar_proxima_disponibilidad(
-                empresa, turno.kilos_estimados, hora_minima=hora_minima
+                empresa, turno.kilos_estimados, hora_minima=6, desde_fecha=desde_fecha
             )
             if not fecha_asignada or not franja_asignada:
                 raise CupoExcedidoError(
@@ -477,6 +486,19 @@ def confirmar_turno(recorredor, turno) -> Turno:
         turno.save(update_fields=['estado', 'recorredor', 'fecha_entrega', 'franja_horaria', 'fue_confirmado'])
         # NOTA: NO se emite comprobante al confirmar el turno. El comprobante solo se crea en la descarga.
     return turno
+
+
+def cancelar_turnos_vencidos(hoy=None) -> int:
+    """
+    Marca como CANCELADO los turnos en estado CONFIRMADO cuya fecha_entrega
+    sea anterior a `hoy` (ausencia del productor). Marca `cancelado_por_ausencia=True`
+    y conserva `fue_confirmado=True` para diferenciarlo de una cancelación manual.
+    """
+    hoy = hoy or _hoy()
+    return Turno.objects.filter(
+        estado=EstadoTurno.CONFIRMADO,
+        fecha_entrega__lt=hoy,
+    ).update(estado=EstadoTurno.CANCELADO, cancelado_por_ausencia=True)
 
 
 def _texto_turno(turno) -> str:
@@ -535,14 +557,24 @@ def cancelar_turno_recorredor(recorredor, turno, mensaje='') -> list:
 # ---------------------------------------------------------------------------
 # Operación en garita y báscula
 # ---------------------------------------------------------------------------
-def registrar_ingreso_garita(operador, turno, momento=None) -> Turno:
+def registrar_ingreso_garita(operador, turno, momento=None, patente_vehiculo=None) -> Turno:
     momento = momento or timezone.now()
     if turno.fecha_entrega != timezone.localtime(momento).date():
         raise TurnoError(f'El turno {turno.codigo} es para el {turno.fecha_entrega:%d/%m/%Y}, no para hoy.')
-    if not turno.cambiar_estado(EstadoTurno.EN_PLAYA):
+    if EstadoTurno.EN_PLAYA not in turno.TRANSICIONES.get(turno.estado, []):
         raise TurnoError(f'Solo pueden ingresar turnos confirmados (estado actual: {turno.get_estado_display()}).')
+
+    update_fields = ['estado', 'hora_arribo_playa']
+    if not (turno.patente_vehiculo or '').strip():
+        patente_limpia = (patente_vehiculo or '').strip().upper()
+        if not patente_limpia:
+            raise TurnoError('El turno no tiene patente registrada. Debe ingresar la patente del vehículo para registrar la llegada.')
+        turno.patente_vehiculo = patente_limpia
+        update_fields.append('patente_vehiculo')
+
+    turno.cambiar_estado(EstadoTurno.EN_PLAYA)
     turno.hora_arribo_playa = momento
-    turno.save(update_fields=['estado', 'hora_arribo_playa'])
+    turno.save(update_fields=update_fields)
     return turno
 
 
@@ -624,7 +656,11 @@ def rendimiento_productor(productor) -> dict:
     descargados = [t for t in turnos if t.estado == EstadoTurno.DESCARGADO]
     # Turnos que debían presentarse: los que llegaron a playa y los confirmados vencidos.
     presentados = [t for t in turnos if t.estado in (EstadoTurno.EN_PLAYA, EstadoTurno.DESCARGADO)]
-    ausentes = [t for t in turnos if t.estado == EstadoTurno.CONFIRMADO and t.fecha_entrega < hoy]
+    ausentes = [
+        t for t in turnos
+        if (t.estado == EstadoTurno.CONFIRMADO and t.fecha_entrega and t.fecha_entrega < hoy)
+        or t.cancelado_por_ausencia
+    ]
     esperados = len(presentados) + len(ausentes)
 
     return {

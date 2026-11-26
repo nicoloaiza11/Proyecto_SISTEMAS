@@ -3,6 +3,46 @@
 
 {% block title %}Mis Turnos{% endblock %}
 
+{% block extra_head %}
+<style>
+  /* ---- Columna Recomendación Climática ---- */
+  .clima-cell {
+    min-width: 230px;
+    max-width: 300px;
+  }
+  .clima-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.22rem 0.6rem;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .clima-badge.disponible   { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+  .clima-badge.alerta       { background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
+  .clima-badge.info         { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
+  .clima-badge.muted        { background: #F3F4F6; color: #6B7280; border: 1px solid #E5E7EB; }
+
+  .clima-recomendacion {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    margin-top: 0.25rem;
+    line-height: 1.35;
+  }
+  .clima-detalle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.8rem;
+    margin-top: 0.3rem;
+    font-size: 0.7rem;
+    color: #374151;
+  }
+  .clima-detalle span { white-space: nowrap; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container pb-5">
 
@@ -47,6 +87,7 @@
               <th>Corte</th>
               <th class="text-end">Kilos</th>
               <th class="text-center">Estado</th>
+              <th class="clima-cell">Recomendación Climática</th>
               <th class="text-end">Acciones</th>
             </tr>
           </thead>
@@ -60,8 +101,7 @@
                   <span class="tabular-nums fw-bold">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
                   <span class="d-block text-muted small"><i class="bi bi-clock me-1"></i>{{ t.franja_horaria }} hs</span>
                 {% else %}
-                  <span class="badge bg-light text-secondary border"><i class="bi bi-magic me-1"></i>Asignación por sistema</span>
-                  <span class="d-block text-muted small">Al confirmar</span>
+                  <span class="badge bg-light text-secondary border">A confirmar</span>
                 {% endif %}
               </td>
               <td>{{ t.get_corte_tabaco_display }}</td>
@@ -70,6 +110,64 @@
                 <span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span>
                 {% if t.estado == 'PENDIENTE' %}<span class="d-block text-muted" style="font-size: 0.72rem;">Espera confirmación</span>{% endif %}
               </td>
+
+              {# ---- Columna Recomendación Climática (solo en esta vista) ---- #}
+              <td class="clima-cell">
+                {% if t.clima_display.modo == 'pendiente_confirmacion' %}
+                  <span class="clima-badge muted">
+                    <i class="bi bi-cloud-slash"></i> Clima no disponible
+                  </span>
+                  <div class="clima-recomendacion">Clima no disponible hasta que el turno sea confirmado.</div>
+
+                {% elif t.clima_display.modo == 'en_playa' %}
+                  <span class="clima-badge info">
+                    <i class="bi bi-info-circle"></i> Turno en playa
+                  </span>
+                  <div class="clima-recomendacion">Información no disponible porque el turno ya se encuentra en playa.</div>
+
+                {% elif t.clima_display.modo == 'fuera_ventana' %}
+                  <span class="clima-badge muted">
+                    <i class="bi bi-calendar-x"></i> Pronóstico pendiente
+                  </span>
+                  <div class="clima-recomendacion">Disponible dentro de los 16 días previos al turno.</div>
+
+                {% elif t.clima_display.modo == 'cargando' %}
+                  <span class="clima-badge muted">
+                    <i class="bi bi-cloud-off"></i> Pronóstico no disponible
+                  </span>
+                  <div class="clima-recomendacion">No se pudo obtener el pronóstico en este momento.</div>
+
+                {% elif t.clima_display.modo == 'disponible' %}
+                  {% with d=t.clima_display.datos %}
+                    {# Badge principal: descripción del tiempo #}
+                    {% if d.precipitation_probability >= 60 or d.precipitation > 1 %}
+                      <span class="clima-badge alerta"><i class="bi bi-cloud-rain-fill"></i> {{ d.descripcion }}</span>
+                    {% elif d.precipitation_probability >= 30 %}
+                      <span class="clima-badge alerta"><i class="bi bi-cloud-drizzle-fill"></i> {{ d.descripcion }}</span>
+                    {% else %}
+                      <span class="clima-badge disponible"><i class="bi bi-sun-fill"></i> {{ d.descripcion }}</span>
+                    {% endif %}
+
+                    {# Detalles numéricos #}
+                    <div class="clima-detalle">
+                      <span title="Temperatura"><i class="bi bi-thermometer-half"></i> {{ d.temperature_2m|default:"—" }}°C</span>
+                      <span title="Prob. lluvia"><i class="bi bi-umbrella"></i> {{ d.precipitation_probability|default:"0" }}%</span>
+                      <span title="Nubosidad"><i class="bi bi-clouds"></i> {{ d.cloud_cover|default:"0" }}%</span>
+                      {% if d.wind_gusts_10m %}
+                      <span title="Ráfagas"><i class="bi bi-wind"></i> {{ d.wind_gusts_10m }} km/h</span>
+                      {% endif %}
+                    </div>
+
+                    {# Recomendación operativa #}
+                    <div class="clima-recomendacion">{{ d.recomendacion }}</div>
+                  {% endwith %}
+
+                {% else %}
+                  <span class="clima-badge muted"><i class="bi bi-dash-circle"></i> No aplica</span>
+                {% endif %}
+              </td>
+              {# ---- Fin columna climática ---- #}
+
               <td class="text-end">
                 <div class="d-flex justify-content-end gap-2">
                   <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
