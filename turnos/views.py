@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -13,6 +14,7 @@ from accounts.decorators import (
 )
 from accounts.models import EmpresaAcopio
 from . import services
+from . import weather as weather_service
 from .choices import CorteTabaco, EstadoTurno
 from .forms import AsignarTurnoForm, CancelacionForm, ConvocatoriaForm, SolicitudTurnoForm
 from .models import Turno
@@ -61,8 +63,21 @@ def _volver(request, por_defecto):
 # ---------------------------------------------------------------------------
 @productor_required
 def mis_turnos_productor_view(request):
+    services.cancelar_turnos_vencidos()
     productor = request.perfil
-    turnos = productor.turnos.filter(estado__in=ACTIVOS).select_related('empresa')
+    turnos = list(productor.turnos.filter(estado__in=ACTIVOS).select_related('empresa'))
+
+    # --- Lazy Refresh climático: actualiza en background, sin bloquear la vista ---
+    for t in turnos:
+        try:
+            weather_service.refrescar_si_necesario(t)
+        except Exception:
+            pass  # Nunca debe bloquear la carga de la tabla
+
+    # Adjuntamos el dict de display climático a cada turno para el template
+    for t in turnos:
+        t.clima_display = weather_service.clima_display(t)
+
     return render(request, 'turnos/mis_turnos.html', {
         'turnos': turnos,
         'cumplimiento': services.evaluar_cumplimiento(productor),
@@ -72,12 +87,16 @@ def mis_turnos_productor_view(request):
 
 @productor_required
 def registros_historicos_view(request):
+    services.cancelar_turnos_vencidos()
     productor = request.perfil
     base = productor.turnos.select_related('empresa')
     estado = request.GET.get('estado', '')
-    turnos = base.filter(estado=estado) if estado in EstadoTurno.values else base
+    turnos_qs = (base.filter(estado=estado) if estado in EstadoTurno.values else base).order_by('-fecha_entrega', '-id')
+    paginator = Paginator(turnos_qs, 10)
+    page_obj = paginator.get_page(request.GET.get('page'))
     return render(request, 'turnos/registros_historicos.html', {
-        'turnos': turnos.order_by('-fecha_entrega', '-id'),
+        'turnos': page_obj,
+        'page_obj': page_obj,
         'total_turnos': base.count(),
         'turnos_activos': base.filter(estado__in=ACTIVOS).count(),
         'turnos_descargados': base.filter(estado=EstadoTurno.DESCARGADO).count(),
@@ -178,6 +197,7 @@ def comprobante_view(request, codigo):
 # ---------------------------------------------------------------------------
 @recorredor_required
 def panel_recorredor_view(request):
+    services.cancelar_turnos_vencidos()
     recorredor = request.perfil
     empresa = recorredor.empresa_asignada
     hoy = timezone.localdate()
@@ -210,6 +230,11 @@ def asignar_turno_view(request):
         except services.TurnoError as error:
             form.add_error(None, str(error))
         else:
+            # --- Consulta inicial de clima (no bloquea si falla) ---
+            try:
+                weather_service.refrescar_si_necesario(turno)
+            except Exception:
+                pass
             messages.success(
                 request,
                 f'Turno {turno.codigo} asignado y confirmado: {turno.fecha_entrega:%d/%m/%Y}, '
@@ -236,6 +261,13 @@ def confirmar_turno_view(request, turno_id):
     except services.TurnoError as error:
         messages.error(request, str(error))
         return redirect('turnos:panel_recorredor')
+
+    # --- Consulta inicial de clima (no bloquea si falla) ---
+    try:
+        weather_service.refrescar_si_necesario(turno)
+    except Exception:
+        pass
+
     messages.success(
         request,
         f'Turno {turno.codigo} confirmado y asignado por sistema para el '
@@ -270,6 +302,7 @@ def cancelar_turno_recorredor_view(request, turno_id):
 # ---------------------------------------------------------------------------
 @operador_required
 def panel_operador_view(request):
+    services.cancelar_turnos_vencidos()
     fecha = _fecha_param(request)
     turnos = (
         Turno.objects.filter(fecha_entrega=fecha)
@@ -297,7 +330,10 @@ def panel_operador_view(request):
 def registrar_ingreso_view(request, turno_id):
     turno = get_object_or_404(Turno, id=turno_id)
     try:
-        request.perfil.registrar_ingreso_garita(turno)
+        request.perfil.registrar_ingreso_garita(
+            turno,
+            patente_vehiculo=request.POST.get('patente_vehiculo'),
+        )
         messages.success(request, f'Ingreso a playa registrado para {turno.codigo}.')
     except services.TurnoError as error:
         messages.error(request, str(error))
@@ -329,6 +365,7 @@ def registrar_pesaje_view(request, turno_id):
 # ---------------------------------------------------------------------------
 @empresa_required
 def panel_empresa_view(request):
+    services.cancelar_turnos_vencidos()
     empresa = request.perfil
     fecha = _fecha_param(request)
     form = ConvocatoriaForm(request.POST or None,
@@ -362,6 +399,7 @@ def panel_empresa_view(request):
 
 @empresa_required
 def historial_empresa_view(request):
+    services.cancelar_turnos_vencidos()
     empresa = request.perfil
     base = Turno.objects.filter(empresa=empresa).select_related('productor', 'comprobante')
     estado = request.GET.get('estado', '')

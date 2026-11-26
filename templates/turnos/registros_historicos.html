@@ -52,7 +52,7 @@
               {% if t.fecha_entrega %}
                 <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span>
               {% else %}
-                <span class="badge bg-light text-secondary border">Asignación al confirmar</span>
+                <span class="badge bg-light text-secondary border">A confirmar</span>
               {% endif %}
             </td>
             <td>{{ t.get_corte_tabaco_display }}</td>
@@ -62,7 +62,10 @@
                 <span class="d-block text-muted" style="font-size: 0.72rem;">{{ t.desvio_pct|floatformat:1 }} %</span>
               {% else %}—{% endif %}
             </td>
-            <td class="text-center"><span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span></td>
+            <td class="text-center">
+              <span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span>
+              {% if t.cancelado_por_ausencia %}<span class="d-block text-muted" style="font-size: 0.72rem;">Por ausencia</span>{% endif %}
+            </td>
             <td class="text-end">
               {% if t.estado == 'DESCARGADO' %}
                 <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
@@ -81,6 +84,45 @@
         </tbody>
       </table>
     </div>
+
+    {% if page_obj.paginator.count > 0 %}
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2 px-3 py-3 border-top bg-light bg-opacity-50">
+      <div class="text-muted small">
+        Mostrando <strong>{{ page_obj.start_index }}–{{ page_obj.end_index }}</strong> de <strong>{{ page_obj.paginator.count }}</strong> turnos
+        <span class="ms-1">(página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }})</span>
+      </div>
+
+      {% if page_obj.paginator.num_pages > 1 %}
+      <nav aria-label="Paginación de historial de turnos">
+        <div class="d-flex align-items-center gap-1 flex-wrap">
+          {% if page_obj.has_previous %}
+            <a href="?{% if estado_filtro %}estado={{ estado_filtro }}&{% endif %}page={{ page_obj.previous_page_number }}" class="btn btn-sm btn-outline-soltat">
+              <i class="bi bi-chevron-left"></i> Anterior
+            </a>
+          {% else %}
+            <button class="btn btn-sm btn-outline-secondary" disabled><i class="bi bi-chevron-left"></i> Anterior</button>
+          {% endif %}
+
+          {% for num in page_obj.paginator.page_range %}
+            {% if num == page_obj.number %}
+              <span class="btn btn-sm btn-primary-soltat fw-bold">{{ num }}</span>
+            {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+              <a href="?{% if estado_filtro %}estado={{ estado_filtro }}&{% endif %}page={{ num }}" class="btn btn-sm btn-outline-soltat">{{ num }}</a>
+            {% endif %}
+          {% endfor %}
+
+          {% if page_obj.has_next %}
+            <a href="?{% if estado_filtro %}estado={{ estado_filtro }}&{% endif %}page={{ page_obj.next_page_number }}" class="btn btn-sm btn-outline-soltat">
+              Siguiente <i class="bi bi-chevron-right"></i>
+            </a>
+          {% else %}
+            <button class="btn btn-sm btn-outline-secondary" disabled>Siguiente <i class="bi bi-chevron-right"></i></button>
+          {% endif %}
+        </div>
+      </nav>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from accounts.models import EmpresaAcopio, OperadorAcopio, Productor, Recorredor, Usuario
 from . import services
+from . import weather as weather_service
 from .choices import CorteTabaco, EstadoTurno
 from .models import Comprobante, CupoProductor, RegistroOperador, Turno
 
@@ -138,6 +139,24 @@ class SolicitudYAsignacionTests(BaseSoltat):
         with self.assertRaises(services.TurnoError):
             self.solicitar(kilos=31_000)
 
+    def test_solicitud_menor_a_50_kg_se_rechaza_y_50_kg_se_acepta(self):
+        with self.assertRaises(services.TurnoError):
+            self.solicitar(kilos=49)
+        turno = self.solicitar(kilos=50)
+        self.assertEqual(turno.kilos_estimados, 50)
+
+    def test_productor_solicita_turno_sin_patente(self):
+        self.client.force_login(self.productor)
+        r = self.client.post(reverse('turnos:solicitar_turno'), {
+            'empresa': self.empresa.pk,
+            'kilos_estimados': 5000,
+            'corte_tabaco': CorteTabaco.MEDIANA,
+            'patente_vehiculo': '',
+        })
+        self.assertEqual(r.status_code, 302)
+        turno = Turno.objects.get()
+        self.assertEqual(turno.patente_vehiculo, '')
+
     def test_hoy_saltea_franjas_que_ya_empezaron(self):
         ahora = timezone.make_aware(datetime.combine(self.hoy, time(13, 30)))
         franja = services.buscar_franja(self.empresa, self.hoy, 1_000, ahora=ahora)
@@ -149,14 +168,42 @@ class CumplimientoTests(BaseSoltat):
         self.turno_pasado(5, EstadoTurno.DESCARGADO, kilos_reales=10_500)
         self.assertEqual(services.evaluar_cumplimiento(self.productor)['nivel'], 'BUENO')
 
-    def test_no_presentarse_baja_a_regular_y_restringe_franjas(self):
+    def test_no_presentarse_baja_a_regular_sin_restringir_franjas(self):
         self.turno_pasado(3, EstadoTurno.CONFIRMADO, fue_confirmado=True)
         cumplimiento = services.evaluar_cumplimiento(self.productor)
         self.assertEqual(cumplimiento['nivel'], 'REGULAR')
         turno = self.solicitar()
         self.recorredor.confirmar_turno(turno)
         turno.refresh_from_db()
-        self.assertEqual(turno.franja_horaria, '12:00 - 14:00')
+        self.assertIsNotNone(turno.franja_horaria)
+        self.assertEqual(turno.fecha_entrega, self.hoy if int(turno.franja_horaria[:2]) > timezone.localtime().hour or turno.fecha_entrega == self.hoy else self.manana)
+
+    def test_nivel_malo_asigna_minimo_5_dias_despues(self):
+        self.turno_pasado(2, EstadoTurno.CONFIRMADO, fue_confirmado=True)
+        self.turno_pasado(4, EstadoTurno.CONFIRMADO, fue_confirmado=True)
+        self.assertEqual(services.evaluar_cumplimiento(self.productor)['nivel'], 'MALO')
+        turno = self.solicitar()
+        self.recorredor.confirmar_turno(turno)
+        turno.refresh_from_db()
+        self.assertGreaterEqual(turno.fecha_entrega, self.hoy + timedelta(days=5))
+        self.assertEqual(turno.franja_horaria, '06:00 - 08:00')
+
+    def test_nivel_malo_si_hay_turnos_mas_de_5_dias_asigna_al_final(self):
+        # Otro turno ya programado para dentro de 8 días
+        otro = Productor.objects.create_user(username='p_otro', password='x', cuit_dni='20888888888')
+        CupoProductor.objects.create(productor=otro, recorredor=self.recorredor, cupo_maximo=100_000)
+        fecha_lejana = self.hoy + timedelta(days=8)
+        self.recorredor.asignar_turno(otro, 10_000, CorteTabaco.MEDIANA, 'AA111BB', fecha_lejana)
+
+        self.turno_pasado(2, EstadoTurno.CONFIRMADO, fue_confirmado=True)
+        self.turno_pasado(4, EstadoTurno.CONFIRMADO, fue_confirmado=True)
+        self.assertEqual(services.evaluar_cumplimiento(self.productor)['nivel'], 'MALO')
+
+        turno = self.solicitar()
+        self.recorredor.confirmar_turno(turno)
+        turno.refresh_from_db()
+        self.assertGreaterEqual(turno.fecha_entrega, fecha_lejana)
+        self.assertEqual(turno.franja_horaria, '08:00 - 10:00')
 
     def test_desvio_mayor_al_20_por_ciento_cuenta(self):
         self.turno_pasado(3, EstadoTurno.DESCARGADO, kilos=10_000, kilos_reales=7_500)
@@ -260,6 +307,31 @@ class OperacionEnPlantaTests(BaseSoltat):
         self.operador.registrar_pesaje_y_descarga(turno, 8_000, CorteTabaco.MEDIANA, precio='3.50')
         self.assertEqual(self.empresa.calcular_kilos_ocupados(self.hoy), 8_000)
 
+    def test_asignar_sin_patente_y_registrar_patente_en_garita(self):
+        turno = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, '', self.hoy)
+        self.assertEqual(turno.patente_vehiculo, '')
+
+        # En panel del operador debe aparecer el campo de patente para este turno
+        self.client.force_login(self.operador)
+        resp = self.client.get(reverse('turnos:panel_operador'))
+        self.assertContains(resp, 'name="patente_vehiculo"')
+
+        # Sin patente falla el ingreso en garita
+        with self.assertRaises(services.TurnoError):
+            self.operador.registrar_ingreso_garita(turno)
+
+        # Con patente registra el ingreso y guarda la patente en mayúsculas
+        self.operador.registrar_ingreso_garita(turno, patente_vehiculo='ad456ef')
+        turno.refresh_from_db()
+        self.assertEqual(turno.estado, EstadoTurno.EN_PLAYA)
+        self.assertEqual(turno.patente_vehiculo, 'AD456EF')
+
+    def test_panel_operador_no_muestra_campo_patente_si_ya_tiene_patente(self):
+        self.turno_confirmado_hoy()
+        self.client.force_login(self.operador)
+        resp = self.client.get(reverse('turnos:panel_operador'))
+        self.assertNotContains(resp, 'name="patente_vehiculo"')
+
 
 class ConvocatoriaTests(BaseSoltat):
     def test_convocatoria_avisa_a_productores_con_cupo(self):
@@ -308,3 +380,162 @@ class VistasTests(BaseSoltat):
         self.client.force_login(self.recorredor)
         r = self.client.post(reverse('turnos:confirmar_turno', args=[turno.id]), follow=True)
         self.assertContains(r, 'https://wa.me/543884912345')
+
+    def test_turnos_confirmados_vencidos_pasan_a_cancelado_y_solo_salen_en_historial(self):
+        vencido = self.turno_pasado(1, EstadoTurno.CONFIRMADO, fue_confirmado=True)
+        vigente = self.turno_confirmado_hoy()
+
+        # Al abrir mis_turnos, el vencido pasa a CANCELADO con marca de ausencia
+        self.client.force_login(self.productor)
+        resp_activos = self.client.get(reverse('turnos:mis_turnos'))
+        vencido.refresh_from_db()
+        vigente.refresh_from_db()
+        self.assertEqual(vencido.estado, EstadoTurno.CANCELADO)
+        self.assertTrue(vencido.cancelado_por_ausencia)
+        self.assertEqual(vigente.estado, EstadoTurno.CONFIRMADO)
+        codigos_activos = [t.codigo for t in resp_activos.context['turnos']]
+        self.assertNotIn(vencido.codigo, codigos_activos)
+        self.assertIn(vigente.codigo, codigos_activos)
+
+        # La justificación del incumplimiento debe indicar ausencia y no cancelación manual
+        cumplimiento = services.evaluar_cumplimiento(self.productor)
+        self.assertEqual(cumplimiento['cantidad'], 1)
+        self.assertEqual(cumplimiento['detalle'][0]['motivo'], 'No se presentó (ausencia)')
+
+        # Si el productor cancela manualmente un turno confirmado, el motivo es distinto
+        self.productor.cancelar_turno_confirmado(vigente, 'Problema mecánico')
+        cumplimiento_2 = services.evaluar_cumplimiento(self.productor)
+        motivos = {d['turno'].codigo: d['motivo'] for d in cumplimiento_2['detalle']}
+        self.assertEqual(motivos[vencido.codigo], 'No se presentó (ausencia)')
+        self.assertEqual(motivos[vigente.codigo], 'Canceló un turno confirmado')
+
+        # En registros_historicos sí aparece el turno cancelado por vencimiento
+        resp_hist = self.client.get(reverse('turnos:registros_historicos'))
+        codigos_hist = [t.codigo for t in resp_hist.context['turnos']]
+        self.assertIn(vencido.codigo, codigos_hist)
+        self.assertContains(resp_hist, vencido.codigo)
+
+    def test_panel_operador_no_muestra_turnos_vencidos_con_boton_deshabilitado(self):
+        vencido = self.turno_pasado(1, EstadoTurno.CONFIRMADO, fue_confirmado=True)
+        ayer_iso = (self.hoy - timedelta(days=1)).isoformat()
+
+        self.client.force_login(self.operador)
+        resp = self.client.get(reverse('turnos:panel_operador') + f'?fecha={ayer_iso}')
+        vencido.refresh_from_db()
+        self.assertEqual(vencido.estado, EstadoTurno.CANCELADO)
+        self.assertNotContains(resp, vencido.codigo)
+
+    def test_registros_historicos_pagina_de_a_10_turnos(self):
+        turnos_creados = []
+        for i in range(12):
+            turnos_creados.append(self.turno_pasado(i + 1, EstadoTurno.DESCARGADO, kilos_reales=9_500))
+
+        self.client.force_login(self.productor)
+        r1 = self.client.get(reverse('turnos:registros_historicos'))
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(len(r1.context['turnos']), 10)
+        self.assertEqual(r1.context['page_obj'].paginator.num_pages, 2)
+        # El más reciente (1 día atrás) está en página 1; los 2 más antiguos en página 2
+        codigos_p1 = [t.codigo for t in r1.context['turnos']]
+        self.assertIn(turnos_creados[0].codigo, codigos_p1)
+        self.assertNotIn(turnos_creados[11].codigo, codigos_p1)
+
+        r2 = self.client.get(reverse('turnos:registros_historicos') + '?page=2')
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(len(r2.context['turnos']), 2)
+        codigos_p2 = [t.codigo for t in r2.context['turnos']]
+        self.assertIn(turnos_creados[10].codigo, codigos_p2)
+        self.assertIn(turnos_creados[11].codigo, codigos_p2)
+
+
+# ---------------------------------------------------------------------------
+# Tests del módulo weather (clima_display)
+# ---------------------------------------------------------------------------
+class WeatherDisplayTests(BaseSoltat):
+    """Verifica la lógica de clima_display sin llamar a la red."""
+
+    def _turno_confirmado(self, dias_desde_hoy=3):
+        """Crea un turno CONFIRMADO con fecha futura y franja válida."""
+        fecha = timezone.localdate() + timedelta(days=dias_desde_hoy)
+        return Turno.objects.create(
+            codigo=services.generar_codigo_turno(fecha),
+            productor=self.productor,
+            empresa=self.empresa,
+            kilos_estimados=10_000,
+            patente_vehiculo='AB123CD',
+            fecha_entrega=fecha,
+            franja_horaria='08:00 - 10:00',
+            estado=EstadoTurno.CONFIRMADO,
+            corte_tabaco=CorteTabaco.MEDIANA,
+            fue_confirmado=True,
+        )
+
+    def test_pendiente_devuelve_modo_pendiente_confirmacion(self):
+        turno = self.solicitar()
+        self.assertEqual(weather_service.clima_display(turno)['modo'], 'pendiente_confirmacion')
+
+    def test_en_playa_devuelve_modo_en_playa(self):
+        turno = self._turno_confirmado(0)
+        turno.estado = EstadoTurno.EN_PLAYA
+        turno.save()
+        self.assertEqual(weather_service.clima_display(turno)['modo'], 'en_playa')
+
+    def test_confirmado_sin_datos_devuelve_modo_cargando(self):
+        turno = self._turno_confirmado(dias_desde_hoy=3)
+        self.assertIsNone(turno.clima_datos)
+        self.assertEqual(weather_service.clima_display(turno)['modo'], 'cargando')
+
+    def test_confirmado_con_datos_devuelve_modo_disponible(self):
+        turno = self._turno_confirmado(dias_desde_hoy=3)
+        turno.clima_datos = {
+            'temperature_2m': 25.0, 'precipitation_probability': 10,
+            'precipitation': 0.0, 'cloud_cover': 20, 'wind_gusts_10m': 15.0,
+            'weather_code': 1, 'descripcion': 'Mayormente despejado',
+            'recomendacion': '✅ Condiciones favorables para la entrega.',
+            'hora_consulta': '2026-11-29T08:00',
+        }
+        turno.clima_actualizado_el = timezone.now()
+        turno.save()
+        result = weather_service.clima_display(turno)
+        self.assertEqual(result['modo'], 'disponible')
+        self.assertEqual(result['datos']['temperature_2m'], 25.0)
+
+    def test_confirmado_mas_de_16_dias_devuelve_fuera_ventana(self):
+        turno = self._turno_confirmado(dias_desde_hoy=17)
+        self.assertEqual(weather_service.clima_display(turno)['modo'], 'fuera_ventana')
+
+    def test_necesita_refresco_sin_timestamp(self):
+        turno = self._turno_confirmado()
+        self.assertTrue(weather_service.necesita_refresco(turno))
+
+    def test_no_necesita_refresco_con_timestamp_reciente(self):
+        turno = self._turno_confirmado()
+        turno.clima_actualizado_el = timezone.now() - timedelta(hours=2)
+        turno.save()
+        self.assertFalse(weather_service.necesita_refresco(turno))
+
+    def test_necesita_refresco_con_timestamp_viejo(self):
+        turno = self._turno_confirmado()
+        turno.clima_actualizado_el = timezone.now() - timedelta(hours=7)
+        turno.save()
+        self.assertTrue(weather_service.necesita_refresco(turno))
+
+    def test_vista_mis_turnos_incluye_clima_display_en_contexto(self):
+        """La vista del productor renderiza sin error con turnos que tienen clima_display."""
+        self._turno_confirmado(dias_desde_hoy=3)
+        self.client.force_login(self.productor)
+        r = self.client.get(reverse('turnos:mis_turnos'))
+        self.assertEqual(r.status_code, 200)
+        # El template debe mostrar la columna climática
+        self.assertContains(r, 'Recomendación Climática')
+
+    def test_recomendacion_calor_elevado_con_baja_lluvia(self):
+        rec = weather_service._recomendar({
+            'temperature_2m': 33.5,
+            'precipitation_probability': 10,
+            'precipitation': 0.0,
+            'cloud_cover': 15,
+            'wind_gusts_10m': 12.0,
+        })
+        self.assertIn('Temperatura elevada', rec)
+        self.assertIn('lona', rec)

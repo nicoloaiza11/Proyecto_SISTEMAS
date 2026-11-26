@@ -72,7 +72,7 @@
         </div>
         <div class="col-sm-4 text-sm-end">
           <span class="text-muted text-uppercase fw-bold d-block mb-1" style="font-size: 0.68rem; letter-spacing: 0.08em;">Patente del Vehículo</span>
-          <div class="chapa-patente"><span class="chapa-top">ARGENTINA</span><span class="chapa-num">{{ turno.patente_vehiculo }}</span></div>
+          <div class="chapa-patente"><span class="chapa-top">ARGENTINA</span><span class="chapa-num">{{ turno.patente_vehiculo|default:"Sin patente" }}</span></div>
         </div>
       </div>
 
@@ -95,7 +95,7 @@
             {% if turno.fecha_entrega %}
               <strong class="tabular-nums fs-6" style="color: var(--color-primary);">{{ turno.fecha_entrega|date:"d/m/Y" }}</strong>
             {% else %}
-              <span class="text-muted small fst-italic">Asignación automática</span>
+              <span class="text-muted small fst-italic">A confirmar</span>
             {% endif %}
           </div>
         </div>
@@ -105,7 +105,7 @@
             {% if turno.franja_horaria %}
               <strong class="tabular-nums fs-6" style="color: var(--color-primary);">{{ turno.franja_horaria }} hs</strong>
             {% else %}
-              <span class="text-muted small fst-italic">Al confirmar</span>
+              <span class="text-muted small fst-italic">A confirmar</span>
             {% endif %}
           </div>
         </div>
