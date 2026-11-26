@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Historial y Comprobantes · {{ empresa.nombre }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-lg-4 pb-5">
+
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end mb-4 gap-3">
+    <div>
+      <span class="section-eyebrow"><i class="bi bi-clock-history me-1"></i> {{ empresa.nombre }} · Portal de Acopio</span>
+      <h1 class="h2 mb-1">Historial y Comprobantes</h1>
+      <p class="text-muted small mb-0">Consulte el registro histórico de turnos y acceda a los comprobantes oficiales de pesaje y liquidación.</p>
+    </div>
+    <a href="{% url 'turnos:panel_empresa' %}" class="btn btn-outline-soltat">
+      <i class="bi bi-arrow-left me-1"></i> Ocupación y Convocatorias
+    </a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-sm-4">
+      <div class="card-soltat p-3 shadow-sm">
+        <span class="text-muted small d-block">Total de turnos</span>
+        <span class="h3 fw-bold tabular-nums">{{ total_turnos }}</span>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card-soltat p-3 shadow-sm">
+        <span class="text-muted small d-block">Turnos activos / en curso</span>
+        <span class="h3 fw-bold tabular-nums" style="color: #9A6B10;">{{ turnos_activos }}</span>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card-soltat p-3 shadow-sm">
+        <span class="text-muted small d-block">Descargados con Comprobante</span>
+        <span class="h3 fw-bold tabular-nums" style="color: var(--color-secondary);">{{ turnos_descargados }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="{% url 'turnos:historial_empresa' %}" class="btn btn-sm {% if not estado_filtro %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %}" style="border-radius: 20px;">Todos</a>
+    {% for valor, etiqueta in estados_choices %}
+      <a href="?estado={{ valor }}" class="btn btn-sm {% if estado_filtro == valor %}btn-primary-soltat{% else %}btn-outline-soltat{% endif %}" style="border-radius: 20px;">{{ etiqueta }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="card-soltat p-0 overflow-hidden shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-soltat align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Productor</th>
+            <th>Fecha y franja</th>
+            <th>Corte recibido</th>
+            <th class="text-end">Kilos estimados</th>
+            <th class="text-end">Kilos reales</th>
+            <th class="text-end">Precio acordado</th>
+            <th class="text-end">Importe liquidado</th>
+            <th class="text-center">Estado</th>
+            <th class="text-end">Comprobante</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in turnos %}
+          <tr>
+            <td>
+              <a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace fw-bold text-decoration-none" style="color: var(--color-primary);">
+                {{ t.codigo }}
+              </a>
+            </td>
+            <td>
+              <strong>{{ t.productor.get_nombre_completo }}</strong>
+              <span class="d-block text-muted small">CUIT/DNI: {{ t.productor.cuit_dni }}</span>
+            </td>
+            <td>
+              {% if t.fecha_entrega %}
+                <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
+                <span class="text-muted small d-block">{{ t.franja_horaria }} hs</span>
+              {% else %}
+                <span class="badge bg-light text-secondary border">Asignación al confirmar</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if t.comprobante %}
+                <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">{{ t.comprobante.get_corte_tabaco_display }}</span>
+              {% else %}
+                <span>{{ t.get_corte_tabaco_display }} (estimado)</span>
+              {% endif %}
+            </td>
+            <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
+            <td class="text-end tabular-nums">
+              {% if t.kilos_reales is not None %}
+                <strong>{{ t.kilos_reales|intcomma }} kg</strong>
+                <span class="d-block text-muted" style="font-size: 0.72rem;">Desvío: {{ t.desvio_pct|floatformat:1 }} %</span>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="text-end tabular-nums">
+              {% if t.comprobante and t.comprobante.precio %}
+                $ {{ t.comprobante.precio|floatformat:2 }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="text-end tabular-nums">
+              {% if t.comprobante and t.comprobante.importe %}
+                <strong style="color: var(--color-primary);">$ {{ t.comprobante.importe|floatformat:2|intcomma }}</strong>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span>
+            </td>
+            <td class="text-end">
+              {% if t.comprobante %}
+                <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-primary-soltat">
+                  <i class="bi bi-file-earmark-check me-1"></i>Ver Comprobante
+                </a>
+              {% else %}
+                <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
+                  <i class="bi bi-eye me-1"></i>Ficha de Turno
+                </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10" class="text-center text-muted py-4">No hay turnos registrados en este criterio.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

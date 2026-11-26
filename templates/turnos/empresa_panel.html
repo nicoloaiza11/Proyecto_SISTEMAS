@@ -15,12 +15,17 @@
         {% if pendientes %}<strong>{{ pendientes }} solicitud{{ pendientes|pluralize:"es" }} pendiente{{ pendientes|pluralize }}</strong> de confirmar por sus recorredores.{% endif %}
       </p>
     </div>
-    <form method="get" class="d-flex gap-2 align-items-center">
-      <a href="?fecha={{ fecha_anterior }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-left"></i></a>
-      <input type="date" name="fecha" value="{{ fecha_iso }}" class="form-control form-control-sm" style="width: auto;" onchange="this.form.submit()">
-      <a href="?fecha={{ fecha_siguiente }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-right"></i></a>
-      {% if not es_hoy %}<a href="?fecha={{ hoy_iso }}" class="btn btn-sm btn-outline-soltat">Hoy</a>{% endif %}
-    </form>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <a href="{% url 'turnos:historial_empresa' %}" class="btn btn-sm btn-outline-soltat">
+        <i class="bi bi-clock-history me-1"></i> Historial y Comprobantes
+      </a>
+      <form method="get" class="d-flex gap-2 align-items-center m-0">
+        <a href="?fecha={{ fecha_anterior }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-left"></i></a>
+        <input type="date" name="fecha" value="{{ fecha_iso }}" class="form-control form-control-sm" style="width: auto;" onchange="this.form.submit()">
+        <a href="?fecha={{ fecha_siguiente }}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-chevron-right"></i></a>
+        {% if not es_hoy %}<a href="?fecha={{ hoy_iso }}" class="btn btn-sm btn-outline-soltat">Hoy</a>{% endif %}
+      </form>
+    </div>
   </div>
 
   <div class="row g-4">
@@ -57,7 +62,7 @@
       <div class="card-soltat p-0 overflow-hidden shadow-sm">
         <div class="table-responsive">
           <table class="table table-soltat align-middle mb-0">
-            <thead><tr><th>Franja</th><th>Código</th><th>Productor</th><th>Corte</th><th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-center">Estado</th></tr></thead>
+            <thead><tr><th>Franja</th><th>Código</th><th>Productor</th><th>Corte</th><th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-center">Estado</th><th class="text-end">Comprobante</th></tr></thead>
             <tbody>
               {% for t in turnos %}
               <tr>
@@ -68,9 +73,18 @@
                 <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }}</td>
                 <td class="text-end tabular-nums">{{ t.kilos_reales|default_if_none:"—"|intcomma }}</td>
                 <td class="text-center"><span class="badge-soltat {{ t.badge_class }}">{{ t.get_estado_display }}</span></td>
+                <td class="text-end">
+                  {% if t.estado == 'DESCARGADO' %}
+                    <a href="{% url 'turnos:comprobante' t.codigo %}" class="btn btn-sm btn-outline-soltat">
+                      <i class="bi bi-file-earmark-check me-1"></i>Ver
+                    </a>
+                  {% else %}
+                    <span class="text-muted small">—</span>
+                  {% endif %}
+                </td>
               </tr>
               {% empty %}
-              <tr><td colspan="7" class="text-center text-muted py-4">No hay turnos para esta fecha.</td></tr>
+              <tr><td colspan="8" class="text-center text-muted py-4">No hay turnos para esta fecha.</td></tr>
               {% endfor %}
             </tbody>
           </table>

@@ -30,25 +30,23 @@ class BaseSoltat(TestCase):
         )
         CupoProductor.objects.create(productor=self.productor, recorredor=self.recorredor, cupo_maximo=100_000)
 
-    def solicitar(self, kilos=10_000, fecha=None, productor=None):
+    def solicitar(self, kilos=10_000, productor=None):
         return services.solicitar_turno(
-            productor or self.productor, self.empresa, kilos, CorteTabaco.MEDIANA, 'ae123cd', fecha or self.manana,
+            productor or self.productor, self.empresa, kilos, CorteTabaco.MEDIANA, 'ae123cd',
         )
 
-    def turno_pasado(self, dias, estado, kilos=10_000, kilos_reales=None, con_comprobante=False):
+    def turno_pasado(self, dias, estado, kilos=10_000, kilos_reales=None, fue_confirmado=False):
         t = Turno.objects.create(
             codigo=services.generar_codigo_turno(self.hoy), productor=self.productor, empresa=self.empresa,
             kilos_estimados=kilos, kilos_reales=kilos_reales, patente_vehiculo='AA000AA',
             fecha_entrega=self.hoy - timedelta(days=dias), franja_horaria='06:00 - 08:00',
-            estado=estado, corte_tabaco=CorteTabaco.BAJERA,
+            estado=estado, corte_tabaco=CorteTabaco.BAJERA, fue_confirmado=fue_confirmado,
         )
-        if con_comprobante:
-            services.emitir_comprobante(t)
         return t
 
     def turno_confirmado_hoy(self, kilos=10_000):
         """Turno confirmado para hoy, sin depender de la hora en que corre el test."""
-        t = self.turno_pasado(0, EstadoTurno.CONFIRMADO, kilos=kilos, con_comprobante=True)
+        t = self.turno_pasado(0, EstadoTurno.CONFIRMADO, kilos=kilos, fue_confirmado=True)
         t.corte_tabaco = CorteTabaco.MEDIANA
         t.save()
         return t
@@ -78,31 +76,36 @@ class TiposDeUsuarioTests(BaseSoltat):
 
 
 class SolicitudYAsignacionTests(BaseSoltat):
-    def test_productor_solicita_turno_pendiente_sin_comprobante(self):
+    def test_productor_solicita_turno_pendiente_sin_fecha_ni_comprobante(self):
         turno = self.solicitar()
         self.assertEqual(turno.estado, EstadoTurno.PENDIENTE)
-        self.assertEqual(turno.franja_horaria, '06:00 - 08:00')
+        self.assertIsNone(turno.fecha_entrega)
+        self.assertIsNone(turno.franja_horaria)
         self.assertEqual(turno.patente_vehiculo, 'AE123CD')
         self.assertFalse(Comprobante.objects.filter(turno=turno).exists())
 
-    def test_recorredor_confirma_y_se_emite_comprobante(self):
+    def test_recorredor_confirma_y_sistema_asigna_fecha_y_franja_sin_comprobante(self):
         turno = self.solicitar()
         self.recorredor.confirmar_turno(turno)
         turno.refresh_from_db()
         self.assertEqual(turno.estado, EstadoTurno.CONFIRMADO)
         self.assertEqual(turno.recorredor, self.recorredor)
-        self.assertEqual(turno.comprobante.codigo_turno, turno.codigo)
+        self.assertIsNotNone(turno.fecha_entrega)
+        self.assertIsNotNone(turno.franja_horaria)
+        self.assertTrue(turno.fue_confirmado)
+        self.assertFalse(Comprobante.objects.filter(turno=turno).exists())
 
-    def test_turno_asignado_por_recorredor_nace_confirmado(self):
+    def test_turno_asignado_por_recorredor_nace_confirmado_sin_comprobante(self):
         turno = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.SUPERIOR, 'AB123', self.manana)
         self.assertEqual(turno.estado, EstadoTurno.CONFIRMADO)
-        self.assertTrue(Comprobante.objects.filter(turno=turno).exists())
+        self.assertTrue(turno.fue_confirmado)
+        self.assertFalse(Comprobante.objects.filter(turno=turno).exists())
 
     def test_asigna_la_siguiente_franja_cuando_la_primera_se_llena(self):
         CupoProductor.objects.create(productor=self.productor, recorredor=self.recorredor, cupo_maximo=100_000)
-        primero = self.solicitar(kilos=25_000)
-        segundo = self.solicitar(kilos=10_000)
-        tercero = self.solicitar(kilos=5_000)
+        primero = self.recorredor.asignar_turno(self.productor, 25_000, CorteTabaco.MEDIANA, 'AA1', self.manana)
+        segundo = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, 'AA2', self.manana)
+        tercero = self.recorredor.asignar_turno(self.productor, 5_000, CorteTabaco.MEDIANA, 'AA3', self.manana)
         self.assertEqual(primero.franja_horaria, '06:00 - 08:00')
         self.assertEqual(segundo.franja_horaria, '08:00 - 10:00')
         self.assertEqual(tercero.franja_horaria, '06:00 - 08:00')  # entra en el lugar libre
@@ -113,11 +116,11 @@ class SolicitudYAsignacionTests(BaseSoltat):
         self.empresa.save()
         otro = Productor.objects.create_user(username='p2', password='x', cuit_dni='20999999999')
         CupoProductor.objects.create(productor=otro, recorredor=self.recorredor, cupo_maximo=1_000_000)
-        for _ in range(6):
-            self.solicitar(kilos=30_000, productor=otro)
-        self.solicitar(kilos=20_000, productor=otro)  # total 200.000 kg
+        for i in range(6):
+            self.recorredor.asignar_turno(otro, 30_000, CorteTabaco.MEDIANA, f'AA{i}', self.manana)
+        self.recorredor.asignar_turno(otro, 20_000, CorteTabaco.MEDIANA, 'AA99', self.manana)  # total 200.000 kg
         with self.assertRaises(services.CupoExcedidoError):
-            self.solicitar(kilos=1_000, productor=otro)
+            self.recorredor.asignar_turno(otro, 1_000, CorteTabaco.MEDIANA, 'AA100', self.manana)
 
     def test_no_supera_el_cupo_de_temporada(self):
         self.solicitar(kilos=30_000)
@@ -147,10 +150,13 @@ class CumplimientoTests(BaseSoltat):
         self.assertEqual(services.evaluar_cumplimiento(self.productor)['nivel'], 'BUENO')
 
     def test_no_presentarse_baja_a_regular_y_restringe_franjas(self):
-        self.turno_pasado(3, EstadoTurno.CONFIRMADO)
+        self.turno_pasado(3, EstadoTurno.CONFIRMADO, fue_confirmado=True)
         cumplimiento = services.evaluar_cumplimiento(self.productor)
         self.assertEqual(cumplimiento['nivel'], 'REGULAR')
-        self.assertEqual(self.solicitar().franja_horaria, '12:00 - 14:00')
+        turno = self.solicitar()
+        self.recorredor.confirmar_turno(turno)
+        turno.refresh_from_db()
+        self.assertEqual(turno.franja_horaria, '12:00 - 14:00')
 
     def test_desvio_mayor_al_20_por_ciento_cuenta(self):
         self.turno_pasado(3, EstadoTurno.DESCARGADO, kilos=10_000, kilos_reales=7_500)
@@ -158,8 +164,8 @@ class CumplimientoTests(BaseSoltat):
         self.assertEqual(services.evaluar_cumplimiento(self.productor)['cantidad'], 1)
 
     def test_cancelar_confirmado_cuenta_y_cancelacion_del_recorredor_no(self):
-        self.turno_pasado(2, EstadoTurno.CANCELADO, con_comprobante=True)   # canceló el productor
-        self.turno_pasado(3, EstadoTurno.CANCELADO, con_comprobante=False)  # canceló el recorredor
+        self.turno_pasado(2, EstadoTurno.CANCELADO, fue_confirmado=True)   # canceló el productor
+        self.turno_pasado(3, EstadoTurno.CANCELADO, fue_confirmado=False)  # canceló el recorredor
         self.assertEqual(services.evaluar_cumplimiento(self.productor)['cantidad'], 1)
 
     def test_tres_incumplimientos_bloquean_por_30_dias(self):
@@ -196,7 +202,9 @@ class CancelacionTests(BaseSoltat):
         with self.assertRaises(services.TurnoError):
             self.productor.cancelar_turno_confirmado(turno, '')
         avisos = self.productor.cancelar_turno_confirmado(turno, 'Se rompió el tractor')
-        self.assertTrue(Comprobante.objects.filter(turno=turno).exists())
+        turno.refresh_from_db()
+        self.assertTrue(turno.fue_confirmado)
+        self.assertEqual(turno.estado, EstadoTurno.CANCELADO)
         self.assertTrue(all('Se%20rompi' in a['url'] for a in avisos))
         self.assertIn('https://wa.me/543884500001', avisos[0]['url'])
 
@@ -233,7 +241,13 @@ class OperacionEnPlantaTests(BaseSoltat):
     def test_no_se_puede_pesar_sin_ingreso(self):
         turno = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, 'AB1', self.manana)
         with self.assertRaises(services.TurnoError):
-            self.operador.registrar_pesaje_y_descarga(turno, 9_800, CorteTabaco.MEDIANA)
+            self.operador.registrar_pesaje_y_descarga(turno, 9_800, CorteTabaco.MEDIANA, '3.50')
+
+    def test_no_se_puede_pesar_sin_precio_acordado(self):
+        turno = self.turno_confirmado_hoy()
+        self.operador.registrar_ingreso_garita(turno)
+        with self.assertRaises(services.TurnoError):
+            self.operador.registrar_pesaje_y_descarga(turno, 9_800, CorteTabaco.MEDIANA, precio=None)
 
     def test_ingreso_solo_el_dia_del_turno(self):
         turno = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, 'AB1', self.manana)
@@ -243,7 +257,7 @@ class OperacionEnPlantaTests(BaseSoltat):
     def test_kilos_reales_liberan_capacidad(self):
         turno = self.turno_confirmado_hoy()
         self.operador.registrar_ingreso_garita(turno)
-        self.operador.registrar_pesaje_y_descarga(turno, 8_000, CorteTabaco.MEDIANA)
+        self.operador.registrar_pesaje_y_descarga(turno, 8_000, CorteTabaco.MEDIANA, precio='3.50')
         self.assertEqual(self.empresa.calcular_kilos_ocupados(self.hoy), 8_000)
 
 
@@ -263,7 +277,7 @@ class VistasTests(BaseSoltat):
             ('prod', ['turnos:mis_turnos', 'turnos:solicitar_turno', 'turnos:registros_historicos', 'turnos:rendimiento']),
             ('rec', ['turnos:panel_recorredor', 'turnos:asignar_turno']),
             ('op', ['turnos:panel_operador']),
-            ('coop', ['turnos:panel_empresa']),
+            ('coop', ['turnos:panel_empresa', 'turnos:historial_empresa']),
         ]
         for username, vistas in casos:
             self.client.force_login(Usuario.objects.get(username=username))
@@ -285,7 +299,7 @@ class VistasTests(BaseSoltat):
     def test_solicitud_por_formulario_y_confirmacion_con_aviso(self):
         self.client.force_login(self.productor)
         r = self.client.post(reverse('turnos:solicitar_turno'), {
-            'empresa': self.empresa.pk, 'fecha_entrega': self.manana.isoformat(),
+            'empresa': self.empresa.pk,
             'kilos_estimados': 8000, 'corte_tabaco': 'BAJERA', 'patente_vehiculo': 'ab123cd',
         })
         turno = Turno.objects.get()

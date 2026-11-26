@@ -91,23 +91,22 @@ def solicitar_turno_view(request):
     productor = request.perfil
     empresas = services.empresas_con_cupo(productor)
     cumplimiento = services.evaluar_cumplimiento(productor)
-    form = SolicitudTurnoForm(request.POST or None, empresas=empresas,
-                              initial={'fecha_entrega': timezone.localdate()})
+    form = SolicitudTurnoForm(request.POST or None, empresas=empresas)
 
     if request.method == 'POST' and form.is_valid() and not cumplimiento['bloqueado']:
         datos = form.cleaned_data
         try:
             turno = productor.solicitar_turno(
                 datos['empresa'], datos['kilos_estimados'], datos['corte_tabaco'],
-                datos['patente_vehiculo'], datos['fecha_entrega'],
+                datos['patente_vehiculo'],
             )
         except services.TurnoError as error:
             form.add_error(None, str(error))
         else:
             messages.success(
                 request,
-                f'Turno {turno.codigo} solicitado para el {turno.fecha_entrega:%d/%m/%Y}, '
-                f'franja {turno.franja_horaria} hs. Queda pendiente hasta que lo confirme el recorredor.'
+                f'Solicitud de turno {turno.codigo} enviada con éxito. '
+                f'La fecha y franja horaria serán asignadas automáticamente por el sistema cuando la empresa confirme la solicitud.'
             )
             return redirect('turnos:comprobante', codigo=turno.codigo)
 
@@ -237,7 +236,11 @@ def confirmar_turno_view(request, turno_id):
     except services.TurnoError as error:
         messages.error(request, str(error))
         return redirect('turnos:panel_recorredor')
-    messages.success(request, f'Turno {turno.codigo} confirmado. Se emitió el comprobante.')
+    messages.success(
+        request,
+        f'Turno {turno.codigo} confirmado y asignado por sistema para el '
+        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs.'
+    )
     aviso = armar_aviso(
         turno.productor,
         f'SOLTAT · {turno.empresa.nombre} confirmó su turno {turno.codigo} del '
@@ -312,7 +315,10 @@ def registrar_pesaje_view(request, turno_id):
             request.POST.get('corte_tabaco'),
             request.POST.get('precio'),
         )
-        messages.success(request, f'Descarga cerrada para {turno.codigo}: {services.kg(turno.kilos_reales)}.')
+        messages.success(
+            request,
+            f'Descarga y liquidación cerradas para {turno.codigo}: {services.kg(turno.kilos_reales)}. Se emitió el comprobante oficial.'
+        )
     except services.TurnoError as error:
         messages.error(request, str(error))
     return redirect(_volver(request, reverse('turnos:panel_operador')))
@@ -351,6 +357,23 @@ def panel_empresa_view(request):
         'turnos': turnos,
         'pendientes': Turno.objects.filter(empresa=empresa, estado=EstadoTurno.PENDIENTE).count(),
         'form': form,
+    })
+
+
+@empresa_required
+def historial_empresa_view(request):
+    empresa = request.perfil
+    base = Turno.objects.filter(empresa=empresa).select_related('productor', 'comprobante')
+    estado = request.GET.get('estado', '')
+    turnos = base.filter(estado=estado) if estado in EstadoTurno.values else base
+    return render(request, 'turnos/empresa_historial.html', {
+        'empresa': empresa,
+        'turnos': turnos.order_by('-fecha_entrega', '-id'),
+        'total_turnos': base.count(),
+        'turnos_descargados': base.filter(estado=EstadoTurno.DESCARGADO).count(),
+        'turnos_activos': base.filter(estado__in=ACTIVOS).count(),
+        'estado_filtro': estado,
+        'estados_choices': EstadoTurno.choices,
     })
 
 

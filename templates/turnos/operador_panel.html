@@ -71,7 +71,7 @@
                     <select name="corte_tabaco" class="form-select" required>
                       {% for valor, etiqueta in cortes %}<option value="{{ valor }}" {% if valor == t.corte_tabaco %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
                     </select>
-                    <input type="text" name="precio" class="form-control" placeholder="Precio/kg (opc.)" inputmode="decimal">
+                    <input type="number" step="0.01" min="0.01" name="precio" class="form-control" placeholder="Precio acordado ($/kg)" required>
                     <button class="btn btn-primary-soltat"><i class="bi bi-check2"></i> Descargar</button>
                   </div>
                 </form>

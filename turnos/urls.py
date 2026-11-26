@@ -28,6 +28,7 @@ urlpatterns = [
 
     # Empresa de acopio
     path('acopio/panel/', views.panel_empresa_view, name='panel_empresa'),
+    path('acopio/historial/', views.historial_empresa_view, name='historial_empresa'),
 
     # Avisos de WhatsApp y API
     path('avisos/', views.avisos_view, name='avisos'),

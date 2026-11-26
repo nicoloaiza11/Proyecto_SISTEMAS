@@ -207,10 +207,10 @@ def incumplimientos(productor, hoy=None) -> list:
     """
     hoy = hoy or _hoy()
     desde = hoy - timedelta(days=VENTANA_CUMPLIMIENTO_DIAS)
-    turnos = Turno.objects.filter(productor=productor, fecha_entrega__gte=desde).filter(
-        Q(estado=EstadoTurno.CONFIRMADO, fecha_entrega__lt=hoy)
-        | Q(estado=EstadoTurno.CANCELADO, comprobante__isnull=False)
-        | Q(estado=EstadoTurno.DESCARGADO)
+    turnos = Turno.objects.filter(productor=productor).filter(
+        Q(estado=EstadoTurno.CONFIRMADO, fecha_entrega__gte=desde, fecha_entrega__lt=hoy)
+        | Q(estado=EstadoTurno.CANCELADO, fue_confirmado=True)
+        | Q(estado=EstadoTurno.DESCARGADO, fecha_entrega__gte=desde)
     )
     resultado = []
     for t in turnos:
@@ -222,7 +222,8 @@ def incumplimientos(productor, hoy=None) -> list:
             motivo = f'Desvío de kilos de {t.desvio_pct:+.1f} %'
         else:
             continue
-        resultado.append({'turno': t, 'fecha': min(t.fecha_entrega, hoy), 'motivo': motivo})
+        fecha_incump = min(t.fecha_entrega, hoy) if t.fecha_entrega else hoy
+        resultado.append({'turno': t, 'fecha': fecha_incump, 'motivo': motivo})
     return sorted(resultado, key=lambda i: i['fecha'], reverse=True)
 
 
@@ -276,17 +277,38 @@ def generar_codigo_turno(fecha) -> str:
             return codigo
 
 
-def emitir_comprobante(turno) -> Comprobante:
-    comprobante, _ = Comprobante.objects.get_or_create(
+def emitir_comprobante(turno, peso_real, precio, corte_tabaco) -> Comprobante:
+    """
+    Crea el comprobante oficial del turno una vez finalizado el pesaje y descarga.
+    Exige obligatoriamente peso real, corte real y precio acordado.
+    """
+    comprobante, _ = Comprobante.objects.update_or_create(
         turno=turno,
         defaults={
             'codigo_turno': turno.codigo,
             'empresa': turno.empresa,
-            'fecha_entrega': turno.fecha_entrega,
-            'corte_tabaco': turno.corte_tabaco,
+            'fecha_entrega': turno.fecha_entrega or _hoy(),
+            'peso_real': peso_real,
+            'precio': precio,
+            'corte_tabaco': corte_tabaco,
         },
     )
     return comprobante
+
+
+def buscar_proxima_disponibilidad(empresa, kilos, hora_minima=6, desde_fecha=None, max_dias=30):
+    """
+    Devuelve la primera tupla (fecha, franja) que tenga capacidad suficiente
+    para `kilos` en la `empresa`, respetando la `hora_minima` del productor.
+    """
+    ahora = timezone.localtime()
+    inicio = desde_fecha or ahora.date()
+    for offset in range(max_dias):
+        f = inicio + timedelta(days=offset)
+        franja = buscar_franja(empresa, f, kilos, hora_minima=hora_minima, ahora=ahora)
+        if franja is not None:
+            return f, franja
+    return None, None
 
 
 def _validar_datos_turno(empresa, kilos, corte_tabaco, patente_vehiculo, fecha_entrega):
@@ -349,27 +371,66 @@ def _crear_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo, fech
             corte_tabaco=corte_tabaco,
         )
         if estado == EstadoTurno.CONFIRMADO:
-            emitir_comprobante(turno)
+            turno.fue_confirmado = True
+            turno.save(update_fields=['fue_confirmado'])
         return turno
 
 
-def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo, fecha_entrega) -> Turno:
-    """El productor solicita un turno: queda PENDIENTE hasta que lo confirme el recorredor."""
+def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo) -> Turno:
+    """
+    El productor solicita un turno sin elegir fecha: queda PENDIENTE hasta que lo confirme la empresa/recorredor.
+    El sistema asignará automáticamente la fecha y franja al momento de la confirmación.
+    """
     cumplimiento = evaluar_cumplimiento(productor)
     if cumplimiento['bloqueado']:
         raise ProductorBloqueadoError(
             f"Por incumplimientos recientes no puede solicitar turnos hasta el "
             f"{cumplimiento['bloqueado_hasta']:%d/%m/%Y}. Comuníquese con el recorredor de su empresa."
         )
-    return _crear_turno(
-        productor, empresa, kilos, corte_tabaco, patente_vehiculo, fecha_entrega,
-        estado=EstadoTurno.PENDIENTE, hora_minima=cumplimiento['hora_minima'],
-    )
+    if not empresa.activa:
+        raise TurnoError(f'{empresa.nombre} no está recibiendo tabaco en este momento.')
+    if kilos is None or kilos <= 0:
+        raise TurnoError('Los kilos estimados deben ser mayores a cero.')
+    if kilos > empresa.capacidad_franja_kg:
+        raise TurnoError(
+            f'Un turno no puede superar la capacidad de una franja de {empresa.nombre} '
+            f'({kg(empresa.capacidad_franja_kg)}). Divida la entrega en varios turnos.'
+        )
+    if corte_tabaco not in CorteTabaco.values:
+        raise TurnoError('Debe indicar un corte de tabaco válido.')
+    if not (patente_vehiculo or '').strip():
+        raise TurnoError('Debe indicar la patente del vehículo.')
+
+    with transaction.atomic():
+        empresa = EmpresaAcopio.objects.select_for_update().get(pk=empresa.pk)
+        remanente = remanente_cupo(productor, empresa)
+        if remanente is None:
+            raise SinCupoProductorError(
+                f'{productor.get_nombre_completo()} no tiene cupo de temporada asignado con {empresa.nombre}.'
+            )
+        if kilos > remanente:
+            raise SinCupoProductorError(
+                f'Los kilos solicitados ({kg(kilos)}) superan el cupo de temporada disponible '
+                f'con {empresa.nombre} ({kg(remanente)}).'
+            )
+
+        turno = Turno.objects.create(
+            codigo=generar_codigo_turno(_hoy()),
+            productor=productor,
+            empresa=empresa,
+            kilos_estimados=kilos,
+            patente_vehiculo=patente_vehiculo.strip().upper(),
+            corte_tabaco=corte_tabaco,
+            fecha_entrega=None,
+            franja_horaria=None,
+            estado=EstadoTurno.PENDIENTE,
+        )
+        return turno
 
 
 def asignar_turno(recorredor, productor, kilos, corte_tabaco, patente_vehiculo, fecha_entrega) -> Turno:
     """
-    El recorredor asigna un turno: nace CONFIRMADO, con comprobante.
+    El recorredor asigna un turno: nace CONFIRMADO (sin comprobante hasta descarga).
     El recorredor puede asignar a productores bloqueados y en cualquier franja.
     """
     return _crear_turno(
@@ -385,32 +446,56 @@ def _verificar_empresa_recorredor(recorredor, turno):
 
 def confirmar_turno(recorredor, turno) -> Turno:
     _verificar_empresa_recorredor(recorredor, turno)
-    if turno.fecha_entrega < _hoy():
-        raise TurnoError('No se puede confirmar un turno con fecha pasada.')
     with transaction.atomic():
+        empresa = EmpresaAcopio.objects.select_for_update().get(pk=turno.empresa_id)
         if not turno.cambiar_estado(EstadoTurno.CONFIRMADO):
             raise TurnoError(f'Solo se pueden confirmar turnos pendientes (estado actual: {turno.get_estado_display()}).')
+
+        cumplimiento = evaluar_cumplimiento(turno.productor)
+        hora_minima = cumplimiento['hora_minima'] if cumplimiento['hora_minima'] is not None else 6
+
+        # Si el turno no tiene fecha o franja fijada, el sistema la busca y asigna automáticamente
+        fecha_asignada = turno.fecha_entrega
+        franja_asignada = turno.franja_horaria
+        if not fecha_asignada or not franja_asignada:
+            fecha_asignada, franja_asignada = buscar_proxima_disponibilidad(
+                empresa, turno.kilos_estimados, hora_minima=hora_minima
+            )
+            if not fecha_asignada or not franja_asignada:
+                raise CupoExcedidoError(
+                    f'No se encontró una franja con lugar para {kg(turno.kilos_estimados)} '
+                    f'en los próximos 30 días en {empresa.nombre}.'
+                )
+
+        if fecha_asignada < _hoy():
+            raise TurnoError('No se puede confirmar un turno con fecha pasada.')
+
+        turno.fecha_entrega = fecha_asignada
+        turno.franja_horaria = franja_asignada
         turno.recorredor = recorredor
-        turno.save(update_fields=['estado', 'recorredor'])
-        emitir_comprobante(turno)
+        turno.fue_confirmado = True
+        turno.save(update_fields=['estado', 'recorredor', 'fecha_entrega', 'franja_horaria', 'fue_confirmado'])
+        # NOTA: NO se emite comprobante al confirmar el turno. El comprobante solo se crea en la descarga.
     return turno
 
 
 def _texto_turno(turno) -> str:
-    return f'{turno.codigo} del {turno.fecha_entrega:%d/%m/%Y} ({turno.franja_horaria} hs)'
+    if turno.fecha_entrega and turno.franja_horaria:
+        return f'{turno.codigo} del {turno.fecha_entrega:%d/%m/%Y} ({turno.franja_horaria} hs)'
+    return f'{turno.codigo} (pendiente de asignación)'
 
 
 def cancelar_turno_productor(productor, turno, mensaje='') -> list:
     """
     PENDIENTE: se cancela sin más.
     CONFIRMADO: exige un mensaje, que se envía por WhatsApp a la empresa;
-    el comprobante se conserva y cuenta como incumplimiento.
+    el comprobante o la marca fue_confirmado cuenta como incumplimiento.
     Devuelve la lista de avisos de WhatsApp a enviar.
     """
     if turno.productor_id != productor.pk:
         raise TurnoError('Solo el productor titular puede cancelar este turno.')
     mensaje = (mensaje or '').strip()
-    era_confirmado = turno.estado == EstadoTurno.CONFIRMADO
+    era_confirmado = turno.fue_confirmado or turno.estado == EstadoTurno.CONFIRMADO
     if era_confirmado and not mensaje:
         raise TurnoError('Para cancelar un turno confirmado debe indicar el motivo.')
     if not turno.cambiar_estado(EstadoTurno.CANCELADO):
@@ -431,15 +516,16 @@ def cancelar_turno_productor(productor, turno, mensaje='') -> list:
 def cancelar_turno_recorredor(recorredor, turno, mensaje='') -> list:
     """
     El recorredor rechaza un turno pendiente o cancela uno confirmado.
-    El comprobante se anula, así que no cuenta como incumplimiento del productor.
+    El comprobante se anula y fue_confirmado se apaga para que no penalice al productor.
     """
     _verificar_empresa_recorredor(recorredor, turno)
     if turno.estado not in (EstadoTurno.PENDIENTE, EstadoTurno.CONFIRMADO):
         raise TurnoError(f'No se puede cancelar un turno en estado {turno.get_estado_display()}.')
     with transaction.atomic():
         Comprobante.objects.filter(turno=turno).delete()
+        turno.fue_confirmado = False
         turno.cambiar_estado(EstadoTurno.CANCELADO)
-        turno.save(update_fields=['estado'])
+        turno.save(update_fields=['estado', 'fue_confirmado'])
     texto = f'SOLTAT · {turno.empresa.nombre} canceló su turno {_texto_turno(turno)}.'
     if (mensaje or '').strip():
         texto += f' Motivo: {mensaje.strip()}'
@@ -460,7 +546,7 @@ def registrar_ingreso_garita(operador, turno, momento=None) -> Turno:
     return turno
 
 
-def registrar_pesaje_y_descarga(operador, turno, peso_real, corte_tabaco, precio=None, momento=None) -> RegistroOperador:
+def registrar_pesaje_y_descarga(operador, turno, peso_real, corte_tabaco, precio, momento=None) -> RegistroOperador:
     try:
         peso_real = int(peso_real)
     except (TypeError, ValueError):
@@ -468,16 +554,15 @@ def registrar_pesaje_y_descarga(operador, turno, peso_real, corte_tabaco, precio
     if peso_real <= 0:
         raise TurnoError('El peso real debe ser mayor a cero.')
     if corte_tabaco not in CorteTabaco.values:
-        raise TurnoError('Debe indicar el corte de tabaco recibido.')
+        raise TurnoError('Debe indicar el corte real de tabaco percibido.')
     if precio in (None, ''):
-        precio = None
-    else:
-        try:
-            precio = Decimal(str(precio).replace(',', '.'))
-        except InvalidOperation:
-            raise TurnoError('El precio debe ser un número.')
-        if precio < 0:
-            raise TurnoError('El precio no puede ser negativo.')
+        raise TurnoError('Debe indicar obligatoriamente el precio acordado por kg antes de emitir el comprobante.')
+    try:
+        precio = Decimal(str(precio).replace(',', '.'))
+    except InvalidOperation:
+        raise TurnoError('El precio debe ser un número válido.')
+    if precio <= Decimal('0'):
+        raise TurnoError('El precio acordado debe ser mayor a cero.')
     if turno.estado != EstadoTurno.EN_PLAYA:
         raise TurnoError(f'Solo se pueden pesar turnos en playa (estado actual: {turno.get_estado_display()}).')
 
@@ -489,11 +574,8 @@ def registrar_pesaje_y_descarga(operador, turno, peso_real, corte_tabaco, precio
             peso_real=peso_real,
             corte_tabaco=corte_tabaco,
         )
-        comprobante = emitir_comprobante(turno)
-        comprobante.peso_real = peso_real
-        comprobante.precio = precio
-        comprobante.corte_tabaco = corte_tabaco
-        comprobante.save(update_fields=['peso_real', 'precio', 'corte_tabaco'])
+        # El comprobante ÚNICAMENTE se emite aquí tras el pesaje, con precio y corte real
+        emitir_comprobante(turno, peso_real=peso_real, precio=precio, corte_tabaco=corte_tabaco)
 
         turno.liquidar_descarga(peso_real, corte_tabaco)
         turno.cambiar_estado(EstadoTurno.DESCARGADO)

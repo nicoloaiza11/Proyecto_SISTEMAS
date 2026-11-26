@@ -69,8 +69,9 @@ class Turno(models.Model):
     )
     kilos_estimados = models.PositiveIntegerField(verbose_name='Kilos estimados')
     patente_vehiculo = models.CharField(max_length=20, verbose_name='Patente del vehículo')
-    fecha_entrega = models.DateField(verbose_name='Fecha de entrega')
-    franja_horaria = models.CharField(max_length=20, choices=FRANJAS_HORARIAS, verbose_name='Franja horaria')
+    fecha_entrega = models.DateField(null=True, blank=True, verbose_name='Fecha de entrega')
+    franja_horaria = models.CharField(max_length=20, choices=FRANJAS_HORARIAS, null=True, blank=True, verbose_name='Franja horaria')
+    fue_confirmado = models.BooleanField(default=False, verbose_name='Fue confirmado')
     estado = models.CharField(
         max_length=12, choices=EstadoTurno.choices, default=EstadoTurno.PENDIENTE, verbose_name='Estado'
     )
@@ -86,7 +87,8 @@ class Turno(models.Model):
         indexes = [models.Index(fields=['empresa', 'fecha_entrega', 'estado'])]
 
     def __str__(self):
-        return f'[{self.codigo}] {self.productor.get_nombre_completo()} · {self.kilos_estimados:,} kg ({self.fecha_entrega})'
+        fecha = self.fecha_entrega.strftime('%d/%m/%Y') if self.fecha_entrega else 'Pendiente de asignación'
+        return f'[{self.codigo}] {self.productor.get_nombre_completo()} · {self.kilos_estimados:,} kg ({fecha})'
 
     # ------------------------------------------------------------------
     # Métodos del diagrama
@@ -197,8 +199,9 @@ class RegistroOperador(models.Model):
 
 class Comprobante(models.Model):
     """
-    Comprobante del turno. Se emite al confirmar el turno; peso_real y precio
-    los completa el operador al cerrar la descarga.
+    Comprobante oficial del turno. Se emite únicamente cuando la empresa de
+    acopio finaliza el pesaje y procesamiento en báscula, registrando el peso real,
+    el corte real percibido y el precio acordado de forma obligatoria.
     """
     turno = models.OneToOneField(
         Turno, on_delete=models.CASCADE, related_name='comprobante', verbose_name='Turno'
@@ -208,12 +211,12 @@ class Comprobante(models.Model):
         EmpresaAcopio, on_delete=models.PROTECT, related_name='comprobantes', verbose_name='Empresa'
     )
     fecha_entrega = models.DateField(verbose_name='Fecha de entrega')
-    peso_real = models.PositiveIntegerField(null=True, blank=True, verbose_name='Peso real (kg)')
+    peso_real = models.PositiveIntegerField(default=0, verbose_name='Peso real (kg)')
     precio = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
-        verbose_name='Precio por kg', help_text='Lo carga a mano el operador; es opcional.'
+        max_digits=10, decimal_places=2, default=Decimal('0.00'),
+        verbose_name='Precio acordado por kg', help_text='Precio acordado cargado en báscula.'
     )
-    corte_tabaco = models.CharField(max_length=10, choices=CorteTabaco.choices, verbose_name='Corte de tabaco')
+    corte_tabaco = models.CharField(max_length=10, choices=CorteTabaco.choices, verbose_name='Corte real de tabaco')
 
     class Meta:
         verbose_name = 'Comprobante'

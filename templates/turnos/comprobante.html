@@ -1,139 +1,217 @@
 {% extends 'base.html' %}
 {% load humanize static %}
 
-{% block title %}Turno {{ turno.codigo }}{% endblock %}
+{% block title %}
+  {% if comprobante %}Comprobante Oficial {{ turno.codigo }}{% else %}Turno {{ turno.codigo }}{% endif %}
+{% endblock %}
 
 {% block content %}
-<div class="container py-2">
+<div class="container py-3">
 
-  <div class="d-flex justify-content-between align-items-center mb-3 mx-auto d-print-none" style="max-width: 680px;">
-    <a href="{% url 'login_redirect' %}" class="btn btn-sm btn-outline-soltat"><i class="bi bi-arrow-left me-1"></i> Volver</a>
+  <div class="d-flex justify-content-between align-items-center mb-3 mx-auto d-print-none" style="max-width: 760px;">
+    {% if user.es_empresa %}
+      <a href="{% url 'turnos:historial_empresa' %}" class="btn btn-sm btn-outline-soltat">
+        <i class="bi bi-arrow-left me-1"></i> Volver al historial
+      </a>
+    {% elif user.es_productor %}
+      <a href="{% url 'turnos:mis_turnos' %}" class="btn btn-sm btn-outline-soltat">
+        <i class="bi bi-arrow-left me-1"></i> Volver a mis turnos
+      </a>
+    {% else %}
+      <a href="{% url 'login_redirect' %}" class="btn btn-sm btn-outline-soltat">
+        <i class="bi bi-arrow-left me-1"></i> Volver
+      </a>
+    {% endif %}
+
     {% if comprobante %}
-      <button onclick="window.print()" class="btn btn-sm btn-primary-soltat"><i class="bi bi-printer me-1"></i> Imprimir comprobante</button>
+      <button onclick="window.print()" class="btn btn-sm btn-primary-soltat">
+        <i class="bi bi-printer me-1"></i> Imprimir Comprobante Oficial
+      </button>
     {% endif %}
   </div>
 
-  <div class="comprobante-card">
+  <div class="comprobante-card mx-auto shadow-sm" style="max-width: 760px;">
+    <!-- Encabezado superior -->
     <div class="comprobante-top-band d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
       <div>
         <span class="text-uppercase fw-bold d-block" style="font-size: 0.68rem; letter-spacing: 0.12em; color: var(--color-accent);">
-          {% if comprobante %}Comprobante de turno{% else %}Solicitud de turno{% endif %}
+          {% if comprobante %}DOCUMENTO OFICIAL DE LIQUIDACIÓN{% else %}SEGUIMIENTO LOGÍSTICO DE TURNO{% endif %}
         </span>
         <h1 class="h4 text-white mb-0 mt-1" style="font-family: 'Montserrat', sans-serif;">
-          {% if comprobante %}ORDEN DE INGRESO A ACOPIO{% else %}PENDIENTE DE CONFIRMACIÓN{% endif %}
+          {% if comprobante %}COMPROBANTE OFICIAL DE RECEPCIÓN Y LIQUIDACIÓN{% elif turno.estado == 'PENDIENTE' %}SOLICITUD PENDIENTE DE ASIGNACIÓN{% else %}TURNO CONFIRMADO{% endif %}
         </h1>
       </div>
       <span class="badge-soltat {{ turno.badge_class }}">{{ turno.get_estado_display }}</span>
     </div>
 
     <div class="p-4 p-md-5">
+
+      <!-- Alertas de estado previo a descarga -->
       {% if not comprobante and turno.estado == 'PENDIENTE' %}
-        <div class="alert alert-warning small">
+        <div class="alert alert-warning small mb-4" style="border-radius: 10px;">
           <i class="bi bi-hourglass-split me-1"></i>
-          El comprobante se emite cuando el recorredor de {{ turno.empresa.nombre }} confirma el turno.
+          <strong>Solicitud pendiente de confirmación:</strong> La fecha y franja horaria serán asignadas automáticamente por el sistema cuando la empresa confirme la solicitud.
+          El comprobante oficial se emitirá una vez que la empresa termine todo el procesamiento del producto en báscula.
+        </div>
+      {% elif not comprobante and turno.estado == 'CONFIRMADO' %}
+        <div class="alert alert-info small mb-4" style="border-radius: 10px;">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong>Turno asignado y confirmado:</strong> El comprobante oficial con el precio acordado y corte real percibido se creará y emitirá automáticamente una vez que el centro de acopio descargue y pese el lote.
         </div>
       {% elif not comprobante and turno.estado == 'CANCELADO' %}
-        <div class="alert alert-secondary small"><i class="bi bi-x-circle me-1"></i> Turno cancelado.</div>
+        <div class="alert alert-secondary small mb-4" style="border-radius: 10px;">
+          <i class="bi bi-x-circle me-1"></i> Turno cancelado.
+        </div>
       {% endif %}
 
+      <!-- Cabecera de Código y Patente -->
       <div class="row g-3 align-items-center p-3 rounded-3 mb-4" style="background-color: var(--color-surface-warm); border: 1.5px solid var(--color-border);">
         <div class="col-sm-8">
-          <span class="text-muted text-uppercase fw-bold d-block" style="font-size: 0.68rem; letter-spacing: 0.08em;">Código de turno</span>
+          <span class="text-muted text-uppercase fw-bold d-block" style="font-size: 0.68rem; letter-spacing: 0.08em;">Código único de turno</span>
           <div class="h2 fw-bold font-monospace mb-0 mt-1" style="color: var(--color-primary);">{{ turno.codigo }}</div>
         </div>
         <div class="col-sm-4 text-sm-end">
-          <span class="text-muted text-uppercase fw-bold d-block mb-1" style="font-size: 0.68rem; letter-spacing: 0.08em;">Patente</span>
+          <span class="text-muted text-uppercase fw-bold d-block mb-1" style="font-size: 0.68rem; letter-spacing: 0.08em;">Patente del Vehículo</span>
           <div class="chapa-patente"><span class="chapa-top">ARGENTINA</span><span class="chapa-num">{{ turno.patente_vehiculo }}</span></div>
         </div>
       </div>
 
-      <div class="row g-4">
+      <!-- Datos de Partes y Asignación de Turno -->
+      <div class="row g-4 mb-4">
         <div class="col-sm-6">
-          <span class="text-muted small d-block">Empresa</span>
-          <strong class="text-dark d-block">{{ turno.empresa.nombre }}</strong>
+          <span class="text-muted small d-block">Empresa Compradora</span>
+          <strong class="text-dark fs-5 d-block">{{ turno.empresa.nombre }}</strong>
+          <span class="text-muted small">Centro de Acopio Perico, Jujuy</span>
         </div>
         <div class="col-sm-6">
-          <span class="text-muted small d-block">Productor</span>
-          <strong class="text-dark d-block">{{ turno.productor.get_nombre_completo }}</strong>
+          <span class="text-muted small d-block">Productor Titular</span>
+          <strong class="text-dark fs-5 d-block">{{ turno.productor.get_nombre_completo }}</strong>
           <span class="text-muted small">CUIT/DNI {{ turno.productor.cuit_dni }}</span>
         </div>
 
-        <div class="col-sm-3">
+        <div class="col-sm-4">
           <div class="p-3 rounded-3 h-100" style="background-color: var(--color-primary-soft);">
-            <span class="text-muted small d-block">Fecha</span>
-            <strong class="tabular-nums" style="color: var(--color-primary);">{{ turno.fecha_entrega|date:"d/m/Y" }}</strong>
+            <span class="text-muted small d-block">Fecha de Entrega</span>
+            {% if turno.fecha_entrega %}
+              <strong class="tabular-nums fs-6" style="color: var(--color-primary);">{{ turno.fecha_entrega|date:"d/m/Y" }}</strong>
+            {% else %}
+              <span class="text-muted small fst-italic">Asignación automática</span>
+            {% endif %}
           </div>
         </div>
-        <div class="col-sm-3">
+        <div class="col-sm-4">
           <div class="p-3 rounded-3 h-100" style="background-color: var(--color-primary-soft);">
-            <span class="text-muted small d-block">Franja</span>
-            <strong class="tabular-nums" style="color: var(--color-primary);">{{ turno.franja_horaria }}</strong>
+            <span class="text-muted small d-block">Franja Horaria</span>
+            {% if turno.franja_horaria %}
+              <strong class="tabular-nums fs-6" style="color: var(--color-primary);">{{ turno.franja_horaria }} hs</strong>
+            {% else %}
+              <span class="text-muted small fst-italic">Al confirmar</span>
+            {% endif %}
           </div>
         </div>
-        <div class="col-sm-3">
-          <div class="p-3 rounded-3 h-100" style="background-color: var(--color-primary-soft);">
-            <span class="text-muted small d-block">Corte</span>
-            <strong style="color: var(--color-primary);">{{ turno.get_corte_tabaco_display }}</strong>
-          </div>
-        </div>
-        <div class="col-sm-3">
+        <div class="col-sm-4">
           <div class="p-3 rounded-3 h-100" style="background-color: var(--color-accent-soft); border: 1px solid rgba(214,168,79,0.4);">
-            <span class="text-muted small d-block">Kilos estimados</span>
+            <span class="text-muted small d-block">Declaración inicial</span>
             <strong class="tabular-nums" style="color: #7D580C;">{{ turno.kilos_estimados|intcomma }} kg</strong>
+            <span class="d-block text-muted" style="font-size: 0.72rem;">Corte: {{ turno.get_corte_tabaco_display }}</span>
           </div>
         </div>
       </div>
 
-      <div class="mt-4 p-3 rounded-3" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
-        <span class="text-uppercase fw-bold" style="font-size: 0.7rem; letter-spacing: 0.08em; color: var(--color-primary);">
-          <i class="bi bi-stopwatch me-1"></i> Recorrido en planta
-        </span>
-        <div class="row g-2 text-center mt-1">
-          <div class="col-sm-4"><div class="p-2 rounded bg-white border">
-            <span class="text-muted d-block" style="font-size: 0.7rem;">Ingreso a playa</span>
-            <strong class="tabular-nums">{% if turno.hora_arribo_playa %}{{ turno.hora_arribo_playa|date:"H:i" }} hs{% else %}Pendiente{% endif %}</strong>
-          </div></div>
-          <div class="col-sm-4"><div class="p-2 rounded bg-white border">
-            <span class="text-muted d-block" style="font-size: 0.7rem;">Descarga</span>
-            <strong class="tabular-nums">{% if turno.hora_descarga %}{{ turno.hora_descarga|date:"H:i" }} hs{% else %}Pendiente{% endif %}</strong>
-          </div></div>
-          <div class="col-sm-4"><div class="p-2 rounded bg-white border">
-            <span class="text-muted d-block" style="font-size: 0.7rem;">Espera / ciclo total</span>
-            <strong class="tabular-nums">{{ turno.calcular_tiempo_espera|default:"—" }} / {{ turno.calcular_tiempo_ciclo_total|default:"—" }} min</strong>
-          </div></div>
-        </div>
-
-        {% if comprobante.peso_real %}
-          <div class="row g-2 mt-2 pt-2 border-top text-center">
-            <div class="col-sm-4">
-              <span class="text-muted d-block" style="font-size: 0.7rem;">Peso real</span>
-              <strong class="tabular-nums" style="color: var(--color-primary);">{{ comprobante.peso_real|intcomma }} kg</strong>
-              <span class="d-block text-muted" style="font-size: 0.68rem;">Desvío {{ turno.desvio_pct|floatformat:1 }} %</span>
-            </div>
-            <div class="col-sm-4">
-              <span class="text-muted d-block" style="font-size: 0.7rem;">Corte recibido</span>
-              <strong>{{ comprobante.get_corte_tabaco_display }}</strong>
-            </div>
-            <div class="col-sm-4">
-              <span class="text-muted d-block" style="font-size: 0.7rem;">Precio por kg</span>
-              {% if comprobante.precio is not None %}
-                <strong class="tabular-nums">$ {{ comprobante.precio|floatformat:2 }}</strong>
-                <span class="d-block text-muted" style="font-size: 0.68rem;">Importe $ {{ comprobante.importe|floatformat:2|intcomma }}</span>
-              {% else %}
-                <span class="text-muted small">No informado</span>
-              {% endif %}
-            </div>
-          </div>
-        {% endif %}
-      </div>
-
+      <!-- SECCIÓN DEL COMPROBANTE OFICIAL (Solo emitida tras procesamiento en planta) -->
       {% if comprobante %}
-        <div class="ticket-divider"></div>
-        <div class="d-flex justify-content-between align-items-center small text-muted">
-          <span>Presente este código en la garita dentro de la franja <strong>{{ turno.franja_horaria }} hs</strong>.</span>
-          <img src="{% static 'img/logo_3b_full.png' %}" alt="3B Systems" style="height: 22px; width: auto;">
+        <div class="p-4 rounded-3 mb-4" style="background: linear-gradient(180deg, #F9FAF7 0%, #F0F4EC 100%); border: 2px solid var(--color-secondary);">
+          <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+            <div>
+              <span class="text-uppercase fw-bold" style="font-size: 0.75rem; letter-spacing: 0.08em; color: var(--color-secondary);">
+                <i class="bi bi-patch-check-fill me-1"></i> Liquidación de Báscula y Acopio
+              </span>
+              <p class="text-muted small mb-0">Comprobante oficial inmutable para la Empresa y el Productor.</p>
+            </div>
+            <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle px-3 py-2 fw-bold">PROCESAMIENTO FINALIZADO</span>
+          </div>
+
+          <div class="row g-3 text-center">
+            <div class="col-sm-3">
+              <div class="p-3 bg-white rounded-3 shadow-sm border h-100">
+                <span class="text-muted d-block small mb-1">Corte Real Percibido</span>
+                <strong class="fs-5 text-dark">{{ comprobante.get_corte_tabaco_display }}</strong>
+                {% if comprobante.corte_tabaco != turno.corte_tabaco %}
+                  <span class="d-block text-warning-emphasis small mt-1" style="font-size: 0.7rem;">(Difiere de corte declarado)</span>
+                {% else %}
+                  <span class="d-block text-success small mt-1" style="font-size: 0.7rem;"><i class="bi bi-check2"></i> Coincide</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="col-sm-3">
+              <div class="p-3 bg-white rounded-3 shadow-sm border h-100">
+                <span class="text-muted d-block small mb-1">Peso Real Recibido</span>
+                <strong class="fs-5 tabular-nums text-dark">{{ comprobante.peso_real|intcomma }} kg</strong>
+                <span class="d-block text-muted" style="font-size: 0.72rem;">Desvío: {{ turno.desvio_pct|floatformat:1 }} %</span>
+              </div>
+            </div>
+
+            <div class="col-sm-3">
+              <div class="p-3 bg-white rounded-3 shadow-sm border h-100">
+                <span class="text-muted d-block small mb-1">Precio Acordado / kg</span>
+                <strong class="fs-5 tabular-nums text-dark">$ {{ comprobante.precio|floatformat:2 }}</strong>
+                <span class="d-block text-muted" style="font-size: 0.72rem;">Fijado en báscula</span>
+              </div>
+            </div>
+
+            <div class="col-sm-3">
+              <div class="p-3 rounded-3 shadow-sm border h-100" style="background-color: var(--color-primary); color: white;">
+                <span class="d-block small text-white-50 mb-1">Importe Total Liquidado</span>
+                <strong class="fs-5 tabular-nums text-white">$ {{ comprobante.importe|floatformat:2|intcomma }}</strong>
+                <span class="d-block text-white-50" style="font-size: 0.72rem;">Liquidación final</span>
+              </div>
+            </div>
+          </div>
         </div>
       {% endif %}
+
+      <!-- Tiempos y Operación en Planta -->
+      <div class="p-3 rounded-3 mb-4" style="background-color: var(--color-surface-warm); border: 1px solid var(--color-border);">
+        <span class="text-uppercase fw-bold" style="font-size: 0.7rem; letter-spacing: 0.08em; color: var(--color-primary);">
+          <i class="bi bi-stopwatch me-1"></i> Registro de Tiempos en Planta
+        </span>
+        <div class="row g-2 text-center mt-1">
+          <div class="col-sm-4">
+            <div class="p-2 rounded bg-white border">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">Ingreso a playa</span>
+              <strong class="tabular-nums">{% if turno.hora_arribo_playa %}{{ turno.hora_arribo_playa|date:"H:i" }} hs{% else %}Pendiente{% endif %}</strong>
+            </div>
+          </div>
+          <div class="col-sm-4">
+            <div class="p-2 rounded bg-white border">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">Descarga y pesaje</span>
+              <strong class="tabular-nums">{% if turno.hora_descarga %}{{ turno.hora_descarga|date:"H:i" }} hs{% else %}Pendiente{% endif %}</strong>
+            </div>
+          </div>
+          <div class="col-sm-4">
+            <div class="p-2 rounded bg-white border">
+              <span class="text-muted d-block" style="font-size: 0.7rem;">Espera / ciclo total</span>
+              <strong class="tabular-nums">{{ turno.calcular_tiempo_espera|default:"—" }} / {{ turno.calcular_tiempo_ciclo_total|default:"—" }} min</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pie del Comprobante -->
+      <div class="ticket-divider"></div>
+      <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2 small text-muted pt-2">
+        {% if comprobante %}
+          <span>Este comprobante constituye constancia oficial válida ante <strong>{{ turno.empresa.nombre }}</strong> y el productor.</span>
+        {% else %}
+          <span>Presente este código en la garita al ingresar al centro de acopio dentro de su franja asignada.</span>
+        {% endif %}
+        <div class="d-flex align-items-center gap-2">
+          <span>Sistema SOLTAT</span>
+          <img src="{% static 'img/logo_3b_full.png' %}" alt="3B Systems" style="height: 20px; width: auto;">
+        </div>
+      </div>
+
     </div>
   </div>
 </div>

@@ -135,9 +135,9 @@ class Productor(Usuario):
         verbose_name = 'Productor'
         verbose_name_plural = 'Productores'
 
-    def solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo, fecha_entrega):
+    def solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo):
         from turnos import services
-        return services.solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo, fecha_entrega)
+        return services.solicitar_turno(self, empresa, kg, corte_tabaco, patente_vehiculo)
 
     def consultar_disponibilidad(self, empresa, fecha):
         from turnos import services
