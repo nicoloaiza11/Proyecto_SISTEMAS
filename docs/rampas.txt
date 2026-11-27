@@ -1,0 +1,96 @@
+SOLTAT - NOVEDAD EN DEV: RAMPAS DE DESCARGA
+===========================================
+
+Chicos, ya está en la rama dev lo de las 5 rampas (puertas) de descarga
+que acordamos. Commit: a73915f "Agregar las 5 rampas de descarga con
+prioridad por empresa".
+
+
+1. CÓMO FUNCIONA
+----------------
+
+Reparto de rampas:
+  - Massalin ........... rampas 1 y 2
+  - Alliance One ....... rampas 3, 4 y 5
+  - Cooperativa ........ las 5 rampas (1 a 5)
+
+Reglas:
+  - Cada rampa recibe UN SOLO TURNO POR FRANJA (franjas de 2 horas,
+    de 06:00 a 22:00).
+  - Cada empresa tiene un horario preferente:
+      * Massalin y Alliance One: mañana (06:00 a 14:00)
+      * Cooperativa: tarde (14:00 a 22:00)
+  - El sistema asigna la rampa automáticamente cuando se asigna o se
+    confirma un turno, y busca primero en el horario preferente de la
+    empresa.
+  - Fuera de su horario, una empresa solo puede tomar una rampa libre EL
+    MISMO DÍA de la entrega. Para días futuros, las rampas quedan
+    guardadas para la empresa que tiene la prioridad.
+      Ejemplo: la Cooperativa pide un turno para el jueves y la tarde del
+      jueves está llena -> el sistema le da el viernes a la tarde, no el
+      jueves a la mañana. Pero si el mismo jueves la rampa 1 de las 10:00
+      sigue libre, la puede usar.
+  - El primero que reserva se queda con la rampa.
+  - Se sigue respetando la capacidad por franja y la capacidad diaria de
+    cada empresa (eso no cambió).
+
+
+2. QUÉ SE VE EN LA PÁGINA
+-------------------------
+
+  - Comprobante: dice en qué rampa descargar ("Rampa 3").
+  - Mis turnos, registros históricos, historial de la empresa, panel del
+    recorredor y cancelación: muestran la rampa del turno.
+  - Panel del operador (Garita y Báscula): grilla con las 5 rampas por
+    franja del día y columna "Rampa" en la lista de turnos.
+  - Panel de la empresa: grilla de SUS rampas por franja, con colores:
+      turno propio / otra empresa / reservada para otra empresa / libre.
+  - /admin: nueva sección "Rampas de descarga" para cambiar qué empresas
+    usan cada rampa, y el campo "Horario preferente" en cada empresa.
+
+
+3. QUÉ TIENEN QUE HACER
+-----------------------
+
+  1) Traer los cambios:
+       git switch dev
+       git pull
+
+  2) Si usan la db.sqlite3 del repo: ya viene migrada, no hace falta nada.
+     Si usan su propia base (o PostgreSQL):
+       python manage.py migrate
+     La migración crea las 5 rampas, les asigna las empresas y le pone
+     rampa a los turnos que ya estaban agendados.
+
+  3) Para nuevas tareas, crear una rama nueva desde dev
+     (ej. git switch -c feature_algo) y hacer el PR hacia dev.
+
+
+4. ARCHIVOS QUE CAMBIARON (por si están tocando lo mismo)
+--------------------------------------------------------
+
+  - turnos/models.py ........ nueva clase Rampa y campo Turno.rampa
+  - accounts/models.py ...... campo EmpresaAcopio.horario_preferente
+  - turnos/services.py ...... asignación de rampa, prioridad y liberación
+                              (parámetro DIAS_LIBERACION_RAMPAS = 0 al
+                              principio: 0 = el mismo día)
+  - turnos/views.py, templates de turnos y static/css/custom.css
+  - turnos/admin.py, accounts/admin.py
+  - turnos/management/commands/seed_data.py
+  - turnos/tests.py ......... 13 tests nuevos de rampas
+  - Migraciones nuevas: accounts 0002, turnos 0006 y 0007
+  - README.md
+
+
+5. A TENER EN CUENTA
+--------------------
+
+  - seed_data estaba fallando (llamaba a emitir_comprobante con un solo
+    argumento). Quedó corregido: el comprobante se emite solo en la
+    báscula, con peso real, precio y corte.
+  - El test test_nivel_malo_si_hay_turnos_mas_de_5_dias_asigna_al_final
+    falla, pero YA FALLABA en dev antes de las rampas (espera la franja
+    08:00 y el sistema asigna la 06:00). Que lo revise quien lo escribió.
+    El resto de los tests pasa (64 de 65).
+  - Pendiente: agregar la clase Rampa al diagrama de clases de draw.io.
+  - main no se tocó: dev tiene todo lo nuevo hasta que decidamos pasarlo.
