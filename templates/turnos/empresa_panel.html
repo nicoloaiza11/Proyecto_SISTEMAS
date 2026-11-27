@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load humanize static %}
 
 {% block title %}Ocupación y Convocatorias{% endblock %}
 
@@ -45,18 +45,23 @@
           <div class="progress-bar" style="width: {{ disponibilidad.porcentaje_ocupacion|stringformat:'f' }}%; background-color: var(--color-primary);"></div>
         </div>
 
-        <h2 class="h6 fw-bold">Por franja</h2>
-        {% for f in disponibilidad.franjas %}
-          <div class="small mb-2">
-            <div class="d-flex justify-content-between">
-              <span>{{ f.etiqueta }}</span>
-              <span class="tabular-nums">{{ f.ocupados|intcomma }} / {{ f.capacidad|intcomma }} kg</span>
-            </div>
-            <div class="progress" style="height: 6px;">
-              <div class="progress-bar" style="width: {{ f.porcentaje }}%; background-color: {% if f.porcentaje >= 100 %}#C0392B{% elif f.porcentaje >= 80 %}#D6A84F{% else %}var(--color-primary){% endif %};"></div>
-            </div>
-          </div>
-        {% endfor %}
+        <h2 class="h6 fw-bold mb-1">Ocupación por franja</h2>
+        <p class="small text-muted mb-3">Kilos agendados en cada franja del {{ fecha|date:"d/m/Y" }}, contra la capacidad por franja.</p>
+        <div class="grafico-caja" style="height: 240px;"><canvas data-grafico="empresaFranjas" role="img" aria-label="Gráfico de barras de kilos ocupados por franja horaria"></canvas></div>
+      </div>
+
+      <div class="card-soltat p-4 shadow-sm mb-4">
+        <h2 class="h6 fw-bold mb-1"><i class="bi bi-bar-chart me-1"></i> Kilos recibidos por día</h2>
+        <p class="small text-muted mb-3">Kilos descargados en báscula en los últimos 14 días hasta el {{ fecha|date:"d/m/Y" }}, contra la capacidad diaria.</p>
+        <div class="grafico-caja" style="height: 260px;"><canvas data-grafico="empresaDias" role="img" aria-label="Gráfico de barras de kilos recibidos por día"></canvas></div>
+      </div>
+
+      <div class="row g-4 mb-4">
+        <div class="col-12"><div class="card-soltat p-4 shadow-sm h-100">
+          <h2 class="h6 fw-bold mb-1"><i class="bi bi-pie-chart me-1"></i> Recepción por corte</h2>
+          <p class="small text-muted mb-3">Kilos reales recibidos en la temporada.</p>
+          <div class="grafico-caja" style="height: 260px;"><canvas data-grafico="empresaCortes" role="img" aria-label="Gráfico de anillo de kilos recibidos por corte de tabaco"></canvas></div>
+        </div></div>
       </div>
 
       <div class="card-soltat p-4 shadow-sm mb-4">
@@ -150,4 +155,10 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ graficos|json_script:"datos-graficos" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/graficos.js' %}"></script>
 {% endblock %}

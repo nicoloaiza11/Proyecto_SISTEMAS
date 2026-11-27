@@ -13,7 +13,7 @@ from accounts.decorators import (
     empresa_required, operador_required, productor_required, recorredor_required,
 )
 from accounts.models import EmpresaAcopio
-from . import services
+from . import graficos, services
 from . import weather as weather_service
 from .choices import CorteTabaco, EstadoTurno
 from .forms import AsignarTurnoForm, CancelacionForm, ConvocatoriaForm, SolicitudTurnoForm
@@ -164,7 +164,9 @@ def cancelar_turno_productor_view(request, turno_id):
 
 @productor_required
 def rendimiento_productor_view(request):
-    return render(request, 'turnos/rendimiento.html', request.perfil.consultar_rendimiento())
+    contexto = request.perfil.consultar_rendimiento()
+    contexto['graficos'] = graficos.graficos_productor(request.perfil)
+    return render(request, 'turnos/rendimiento.html', contexto)
 
 
 # ---------------------------------------------------------------------------
@@ -388,10 +390,12 @@ def panel_empresa_view(request):
         Turno.objects.filter(empresa=empresa, fecha_entrega=fecha)
         .select_related('productor', 'rampa').order_by('franja_horaria', 'rampa__numero', 'id')
     )
+    disponibilidad = services.consultar_disponibilidad(empresa, fecha)
     return render(request, 'turnos/empresa_panel.html', {
         **_contexto_fecha(fecha),
         'empresa': empresa,
-        'disponibilidad': services.consultar_disponibilidad(empresa, fecha),
+        'disponibilidad': disponibilidad,
+        'graficos': graficos.graficos_empresa(empresa, fecha, disponibilidad),
         'rampas': services.ocupacion_rampas(empresa, fecha),
         'turnos': turnos,
         'pendientes': Turno.objects.filter(empresa=empresa, estado=EstadoTurno.PENDIENTE).count(),

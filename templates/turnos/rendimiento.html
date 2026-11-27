@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load humanize static %}
 
 {% block title %}Mi Rendimiento{% endblock %}
 
@@ -22,14 +22,46 @@
       {% if desvio_medio is not None %}<span class="d-block text-muted small">Desvío medio {{ desvio_medio|floatformat:1 }} %</span>{% endif %}
     </div></div>
     <div class="col-6 col-lg-3"><div class="card-soltat p-3 shadow-sm h-100">
-      <span class="text-muted small d-block">Espera en planta / ciclo total</span>
-      <span class="h5 fw-bold tabular-nums">{{ espera_media|default:"—" }} / {{ ciclo_medio|default:"—" }} min</span>
-      <span class="d-block text-muted small">Promedios</span>
+      <span class="text-muted small d-block">Tiempo promedio de espera en planta</span>
+      <span class="h3 fw-bold tabular-nums">{% if espera_media is not None %}{{ espera_media|floatformat:0 }} min{% else %}—{% endif %}</span>
+      <span class="d-block text-muted small">Desde que llega hasta que lo descargan</span>
     </div></div>
     <div class="col-6 col-lg-3"><div class="card-soltat p-3 shadow-sm h-100">
       <span class="text-muted small d-block">Presentismo</span>
       <span class="h3 fw-bold tabular-nums">{% if presentismo is not None %}{{ presentismo }} %{% else %}—{% endif %}</span>
       <span class="d-block text-muted small">{{ ausencias }} ausencia{{ ausencias|pluralize }}</span>
+    </div></div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-lg-8"><div class="card-soltat p-4 shadow-sm h-100">
+      <h2 class="h6 fw-bold mb-1"><i class="bi bi-bar-chart me-1"></i> Kilos estimados vs reales</h2>
+      <p class="small text-muted mb-3">Cada entrega descargada: lo que declaró y lo que pesó la báscula. Pase el mouse para ver el desvío.</p>
+      <div class="grafico-caja" style="height: 280px;"><canvas data-grafico="productorKilos" role="img" aria-label="Gráfico de barras de kilos estimados y reales por entrega"></canvas></div>
+    </div></div>
+    <div class="col-lg-4"><div class="card-soltat p-4 shadow-sm h-100">
+      <h2 class="h6 fw-bold mb-1"><i class="bi bi-pie-chart me-1"></i> Entregas por corte</h2>
+      <p class="small text-muted mb-3">Kilos reales entregados de cada corte.</p>
+      <div class="grafico-caja" style="height: 280px;"><canvas data-grafico="productorCortes" role="img" aria-label="Gráfico de anillo de kilos entregados por corte de tabaco"></canvas></div>
+    </div></div>
+    <div class="col-12"><div class="card-soltat p-4 shadow-sm">
+      <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div>
+          <span class="section-eyebrow">Resultado económico por movimiento</span>
+          <h2 class="h6 fw-bold mb-1">Liquidación obtenida (USD) y precio por kilo en cada entrega</h2>
+          <p class="small text-muted mb-0">Entregas con precio cargado en el comprobante. Pase el mouse para ver kilos, precio e importe.</p>
+        </div>
+        <span class="badge-rampa">USD / Entrega</span>
+      </div>
+      <h3 class="small fw-bold text-muted text-uppercase mb-2">Liquidación (USD)</h3>
+      <div class="grafico-caja" style="height: 240px;"><canvas data-grafico="productorLiquidacion" role="img" aria-label="Gráfico de barras de la liquidación en dólares de cada entrega"></canvas></div>
+      <h3 class="small fw-bold text-muted text-uppercase mt-4 mb-2">Precio liquidado (USD/kg)</h3>
+      <div class="grafico-caja" style="height: 170px;"><canvas data-grafico="productorPrecio" data-datos="productorLiquidacion" role="img" aria-label="Gráfico de línea del precio por kilo de cada entrega"></canvas></div>
+    </div></div>
+    <div class="col-12"><div class="card-soltat p-4 shadow-sm">
+      <h2 class="h6 fw-bold mb-1"><i class="bi bi-hourglass-split me-1"></i> Tiempo de espera en planta</h2>
+      <p class="small text-muted mb-3">Cuánto esperó en cada entrega, desde que llegó a la planta hasta que lo descargaron. La línea punteada es su promedio.</p>
+      <div class="grafico-caja" style="height: 220px;"><canvas data-grafico="productorEspera" role="img" aria-label="Gráfico de barras del tiempo de espera en planta de cada entrega, con su promedio"></canvas></div>
     </div></div>
   </div>
 
@@ -45,7 +77,7 @@
           <tr>
             <th>Código</th><th>Empresa</th><th>Fecha</th><th>Corte</th>
             <th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-end">Desvío</th>
-            <th class="text-end">Espera</th><th class="text-end">Ciclo total</th>
+            <th class="text-end">Espera en planta</th>
           </tr>
         </thead>
         <tbody>
@@ -59,14 +91,19 @@
             <td class="text-end tabular-nums">{{ t.kilos_reales|intcomma }}</td>
             <td class="text-end tabular-nums">{{ t.desvio_pct|floatformat:1 }} %</td>
             <td class="text-end tabular-nums">{{ t.calcular_tiempo_espera|default:"—" }} min</td>
-            <td class="text-end tabular-nums">{{ t.calcular_tiempo_ciclo_total|default:"—" }} min</td>
           </tr>
           {% empty %}
-          <tr><td colspan="9" class="text-center text-muted py-4">Todavía no tiene entregas descargadas.</td></tr>
+          <tr><td colspan="8" class="text-center text-muted py-4">Todavía no tiene entregas descargadas.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ graficos|json_script:"datos-graficos" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/graficos.js' %}"></script>
 {% endblock %}

@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import EmpresaAcopio, OperadorAcopio, Productor, Recorredor, Usuario
-from . import services
+from . import graficos, services
 from . import weather as weather_service
 from .choices import CorteTabaco, EstadoTurno, HorarioPreferente
 from .models import Comprobante, CupoProductor, Rampa, RegistroOperador, Turno
@@ -671,3 +671,55 @@ class RampasTests(BaseSoltat):
         self.client.force_login(self.operador)
         r = self.client.get(reverse('turnos:panel_operador'))
         self.assertContains(r, 'Rampas de descarga')
+
+
+class GraficosTests(BaseSoltat):
+    def descargado(self, dias, kilos, reales, corte):
+        t = self.turno_pasado(dias, EstadoTurno.DESCARGADO, kilos=kilos, kilos_reales=reales)
+        t.corte_tabaco = corte
+        t.save()
+        return t
+
+    def test_graficos_del_productor(self):
+        self.descargado(5, 10_000, 9_500, CorteTabaco.BAJERA)
+        self.descargado(2, 8_000, 8_400, CorteTabaco.SUPERIOR)
+        self.turno_pasado(1, EstadoTurno.CANCELADO)  # no cuenta
+        datos = graficos.graficos_productor(self.productor)
+        self.assertEqual(datos['productorKilos']['estimados'], [10_000, 8_000])  # orden cronológico
+        self.assertEqual(datos['productorKilos']['reales'], [9_500, 8_400])
+        self.assertEqual(datos['productorCortes']['valores'], [9_500, 0, 8_400])
+        self.assertEqual(len(datos['productorEspera']['minutos']), 2)
+
+    def test_liquidacion_y_precio_solo_con_precio_cargado(self):
+        from decimal import Decimal
+        con_precio = self.descargado(4, 10_000, 9_500, CorteTabaco.BAJERA)
+        services.emitir_comprobante(con_precio, 9_500, Decimal('3.60'), CorteTabaco.BAJERA)
+        self.descargado(2, 8_000, 8_400, CorteTabaco.SUPERIOR)  # sin comprobante: no aparece
+        datos = graficos.graficos_productor(self.productor)['productorLiquidacion']
+        self.assertEqual(datos['importes'], [34_200.0])
+        self.assertEqual(datos['precios'], [3.6])
+        self.assertEqual(datos['kilos'], [9_500])
+
+    def test_graficos_de_la_empresa(self):
+        self.descargado(1, 10_000, 9_000, CorteTabaco.MEDIANA)
+        disponibilidad = services.consultar_disponibilidad(self.empresa, self.hoy)
+        datos = graficos.graficos_empresa(self.empresa, self.hoy, disponibilidad)
+        self.assertEqual(len(datos['empresaDias']['kilos']), graficos.DIAS_HISTORIAL_EMPRESA)
+        self.assertEqual(datos['empresaDias']['kilos'][-2], 9_000)  # ayer
+        self.assertEqual(datos['empresaDias']['capacidad'], self.empresa.capacidad_diaria_kg)
+        self.assertEqual(len(datos['empresaFranjas']['kilos']), 8)
+        self.assertEqual(datos['empresaCortes']['valores'], [0, 9_000, 0])
+        self.assertNotIn('empresaEstados', datos)
+
+    def test_las_paginas_incluyen_los_graficos(self):
+        self.client.force_login(self.productor)
+        r = self.client.get(reverse('turnos:rendimiento'))
+        self.assertContains(r, 'data-grafico="productorKilos"')
+        self.assertContains(r, 'id="datos-graficos"')
+        self.assertContains(r, 'data-grafico="productorPrecio"')
+        self.assertContains(r, 'Tiempo promedio de espera en planta')
+        self.assertNotContains(r, 'Ciclo total')
+        self.client.force_login(self.empresa)
+        r = self.client.get(reverse('turnos:panel_empresa'))
+        self.assertContains(r, 'data-grafico="empresaDias"')
+        self.assertNotContains(r, 'Estados de los turnos')
