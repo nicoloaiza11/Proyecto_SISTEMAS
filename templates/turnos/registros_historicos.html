@@ -50,7 +50,7 @@
             <td>{{ t.empresa.nombre }}</td>
             <td>
               {% if t.fecha_entrega %}
-                <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span>
+                <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span>{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}
               {% else %}
                 <span class="badge bg-light text-secondary border">A confirmar</span>
               {% endif %}

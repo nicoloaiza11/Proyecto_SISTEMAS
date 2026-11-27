@@ -80,7 +80,7 @@
               <tr>
                 <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
                 <td>{{ t.productor.get_nombre_completo }}</td>
-                <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span></td>
+                <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span>{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</td>
                 <td>{{ t.get_corte_tabaco_display }}</td>
                 <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
                 <td class="text-end">

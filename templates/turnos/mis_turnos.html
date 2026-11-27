@@ -99,7 +99,7 @@
               <td>
                 {% if t.fecha_entrega %}
                   <span class="tabular-nums fw-bold">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
-                  <span class="d-block text-muted small"><i class="bi bi-clock me-1"></i>{{ t.franja_horaria }} hs</span>
+                  <span class="d-block text-muted small"><i class="bi bi-clock me-1"></i>{{ t.franja_horaria }} hs{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</span>
                 {% else %}
                   <span class="badge bg-light text-secondary border">A confirmar</span>
                 {% endif %}

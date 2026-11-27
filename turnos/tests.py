@@ -7,8 +7,8 @@ from django.utils import timezone
 from accounts.models import EmpresaAcopio, OperadorAcopio, Productor, Recorredor, Usuario
 from . import services
 from . import weather as weather_service
-from .choices import CorteTabaco, EstadoTurno
-from .models import Comprobante, CupoProductor, RegistroOperador, Turno
+from .choices import CorteTabaco, EstadoTurno, HorarioPreferente
+from .models import Comprobante, CupoProductor, Rampa, RegistroOperador, Turno
 
 
 class BaseSoltat(TestCase):
@@ -30,6 +30,9 @@ class BaseSoltat(TestCase):
             username='prod', password='x', cuit_dni='20345678901', telefono='+54 388 4912345',
         )
         CupoProductor.objects.create(productor=self.productor, recorredor=self.recorredor, cupo_maximo=100_000)
+        # Las 5 rampas (las crea la migración) habilitadas solo para la empresa del escenario.
+        for numero in range(1, 6):
+            Rampa.objects.get_or_create(numero=numero)[0].empresas.set([self.empresa])
 
     def solicitar(self, kilos=10_000, productor=None):
         return services.solicitar_turno(
@@ -539,3 +542,132 @@ class WeatherDisplayTests(BaseSoltat):
         })
         self.assertIn('Temperatura elevada', rec)
         self.assertIn('lona', rec)
+
+
+class RampasTests(BaseSoltat):
+    """
+    Reparto real: Massalin rampas 1-2 y Alliance One 3-5 (prioridad a la mañana);
+    Cooperativa las 5 (prioridad a la tarde). Un turno por rampa y franja.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.coop = self.empresa
+        self.coop.horario_preferente = HorarioPreferente.TARDE
+        self.coop.save()
+        self.massalin = EmpresaAcopio.objects.create_user(
+            username='mas', password='x', cuit_dni='30776655443', nombre='Massalin',
+            capacidad_franja_kg=30_000,
+        )
+        self.alliance = EmpresaAcopio.objects.create_user(
+            username='aot', password='x', cuit_dni='30665544332', nombre='Alliance One',
+            capacidad_franja_kg=30_000,
+        )
+        for rampa in Rampa.objects.all():
+            rampa.empresas.add(self.massalin if rampa.numero <= 2 else self.alliance)
+        self.rec_massalin = Recorredor.objects.create_user(
+            username='recm', password='x', cuit_dni='20111111113', empresa_asignada=self.massalin,
+        )
+        CupoProductor.objects.create(productor=self.productor, recorredor=self.rec_massalin, cupo_maximo=100_000)
+        self.pasado_manana = self.hoy + timedelta(days=2)
+        # Antes de que empiece cualquier franja del día.
+        self.temprano = timezone.make_aware(datetime.combine(self.hoy, time(5, 0)))
+
+    def ocupar(self, empresa, fecha, franja, numero):
+        return Turno.objects.create(
+            codigo=services.generar_codigo_turno(fecha), productor=self.productor, empresa=empresa,
+            kilos_estimados=1_000, fecha_entrega=fecha, franja_horaria=franja,
+            rampa=Rampa.objects.get(numero=numero), estado=EstadoTurno.CONFIRMADO,
+            corte_tabaco=CorteTabaco.MEDIANA,
+        )
+
+    def ocupar_tarde(self, fecha):
+        for franja in ('14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00'):
+            for numero in range(1, 6):
+                self.ocupar(self.coop, fecha, franja, numero)
+
+    def buscar(self, empresa, fecha, kilos=1_000):
+        return services.buscar_franja_y_rampa(empresa, fecha, kilos, ahora=self.temprano)
+
+    def test_turno_asignado_tiene_rampa(self):
+        turno = self.recorredor.asignar_turno(self.productor, 1_000, CorteTabaco.MEDIANA, 'AA1', self.pasado_manana)
+        self.assertIsNotNone(turno.rampa)
+
+    def test_confirmar_asigna_rampa(self):
+        turno = self.solicitar(kilos=1_000)
+        self.recorredor.confirmar_turno(turno)
+        turno.refresh_from_db()
+        self.assertIsNotNone(turno.rampa)
+
+    def test_cada_empresa_usa_solo_sus_rampas(self):
+        franja, rampa = self.buscar(self.massalin, self.pasado_manana)
+        self.assertIn(rampa.numero, (1, 2))
+        franja, rampa = self.buscar(self.alliance, self.pasado_manana)
+        self.assertIn(rampa.numero, (3, 4, 5))
+
+    def test_un_turno_por_rampa_y_franja(self):
+        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), ('06:00 - 08:00', Rampa.objects.get(numero=2)))
+        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 2)
+        franja, rampa = self.buscar(self.massalin, self.pasado_manana)
+        self.assertEqual(franja, '08:00 - 10:00')
+
+    def test_la_base_de_datos_impide_dos_turnos_en_la_misma_rampa_y_franja(self):
+        from django.db import IntegrityError, transaction
+        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.ocupar(self.coop, self.pasado_manana, '06:00 - 08:00', 1)
+
+    def test_un_turno_cancelado_libera_la_rampa(self):
+        t = self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
+        t.estado = EstadoTurno.CANCELADO
+        t.save()
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), ('06:00 - 08:00', Rampa.objects.get(numero=1)))
+
+    def test_cada_empresa_busca_primero_en_su_horario_preferente(self):
+        self.assertEqual(self.buscar(self.coop, self.pasado_manana)[0], '14:00 - 16:00')
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana)[0], '06:00 - 08:00')
+
+    def test_cooperativa_no_toma_rampas_de_la_manana_en_dias_futuros(self):
+        self.ocupar_tarde(self.pasado_manana)
+        self.assertEqual(self.buscar(self.coop, self.pasado_manana), (None, None))
+        with self.assertRaises(services.CupoExcedidoError):
+            self.recorredor.asignar_turno(self.productor, 1_000, CorteTabaco.MEDIANA, 'AA1', self.pasado_manana)
+
+    def test_massalin_no_toma_rampas_de_la_tarde_en_dias_futuros(self):
+        for franja in ('06:00 - 08:00', '08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00'):
+            for numero in (1, 2):
+                self.ocupar(self.massalin, self.pasado_manana, franja, numero)
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), (None, None))
+
+    def test_el_mismo_dia_se_liberan_las_rampas_libres(self):
+        self.ocupar_tarde(self.hoy)
+        franja, rampa = self.buscar(self.coop, self.hoy)
+        self.assertEqual(franja, '06:00 - 08:00')
+        self.assertEqual(rampa.numero, 1)
+
+    def test_confirmar_pasa_al_dia_siguiente_si_su_horario_esta_lleno(self):
+        self.ocupar_tarde(self.pasado_manana)
+        fecha, franja, rampa = services.buscar_proxima_disponibilidad(
+            self.coop, 1_000, desde_fecha=self.pasado_manana,
+        )
+        self.assertEqual(fecha, self.pasado_manana + timedelta(days=1))
+        self.assertEqual(franja, '14:00 - 16:00')
+
+    def test_ocupacion_de_rampas_de_la_empresa(self):
+        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
+        grilla = services.ocupacion_rampas(self.coop, self.pasado_manana, hoy=self.hoy)
+        fila = grilla['filas'][0]
+        self.assertFalse(fila['preferente'])
+        estados = [c['estado'] for c in fila['celdas']]
+        self.assertEqual(estados, ['otra', 'reservada', 'reservada', 'reservada', 'reservada'])
+        self.assertTrue(all(c['estado'] == 'libre' for c in grilla['filas'][4]['celdas']))
+
+    def test_paneles_muestran_las_rampas(self):
+        self.ocupar(self.massalin, self.hoy, '06:00 - 08:00', 1)
+        self.client.force_login(self.massalin)
+        r = self.client.get(reverse('turnos:panel_empresa'))
+        self.assertContains(r, 'Sus rampas de descarga')
+        self.client.force_login(self.operador)
+        r = self.client.get(reverse('turnos:panel_operador'))
+        self.assertContains(r, 'Rampas de descarga')

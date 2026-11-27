@@ -77,7 +77,7 @@
             <td>
               {% if t.fecha_entrega %}
                 <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
-                <span class="text-muted small d-block">{{ t.franja_horaria }} hs</span>
+                <span class="text-muted small d-block">{{ t.franja_horaria }} hs{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</span>
               {% else %}
                 <span class="badge bg-light text-secondary border">A confirmar</span>
               {% endif %}

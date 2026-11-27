@@ -1070,3 +1070,30 @@ body.hide-proto-markers .proto-only-inline {
     border: 1px solid #000 !important;
   }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Rampas de descarga
+--------------------------------------------------------------------------- */
+.badge-rampa {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background-color: var(--color-primary-soft);
+  color: var(--color-primary);
+  border: 1px solid rgba(23, 63, 53, 0.25);
+  white-space: nowrap;
+}
+.table-rampas td, .table-rampas th { border-color: var(--color-surface-muted); }
+.table-rampas td.rampa-propia, .table-rampas td.rampa-ocupada { background-color: var(--color-primary-soft); font-weight: 600; }
+.table-rampas td.rampa-propia a, .table-rampas td.rampa-ocupada a { color: var(--color-primary); }
+.table-rampas td.rampa-otra { background-color: #EDE9DF; color: #5f6b70; }
+.table-rampas td.rampa-reservada { background-color: var(--color-accent-soft); color: #7D580C; }
+.table-rampas td.rampa-libre { color: var(--color-secondary); }
+.leyenda { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 3px; vertical-align: middle; border: 1px solid #ccc; }
+.leyenda.rampa-propia { background-color: var(--color-primary-soft); }
+.leyenda.rampa-otra { background-color: #EDE9DF; }
+.leyenda.rampa-reservada { background-color: var(--color-accent-soft); }
+.leyenda.rampa-libre { background-color: #fff; }

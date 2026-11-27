@@ -104,6 +104,7 @@
             <span class="text-muted small d-block">Franja Horaria</span>
             {% if turno.franja_horaria %}
               <strong class="tabular-nums fs-6" style="color: var(--color-primary);">{{ turno.franja_horaria }} hs</strong>
+              {% if turno.rampa %}<span class="badge-rampa d-inline-block mt-1"><i class="bi bi-signpost-split me-1"></i>{{ turno.rampa }}</span>{% endif %}
             {% else %}
               <span class="text-muted small fst-italic">A confirmar</span>
             {% endif %}
@@ -204,7 +205,7 @@
         {% if comprobante %}
           <span>Este comprobante constituye constancia oficial válida ante <strong>{{ turno.empresa.nombre }}</strong> y el productor.</span>
         {% else %}
-          <span>Presente este código en la garita al ingresar al centro de acopio dentro de su franja asignada.</span>
+          <span>Presente este código en la garita al ingresar al centro de acopio dentro de su franja asignada{% if turno.rampa %} y descargue en la <strong>{{ turno.rampa }}</strong>{% endif %}.</span>
         {% endif %}
         <div class="d-flex align-items-center gap-2">
           <span>Sistema SOLTAT</span>

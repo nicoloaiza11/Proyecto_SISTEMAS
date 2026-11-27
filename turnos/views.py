@@ -65,7 +65,7 @@ def _volver(request, por_defecto):
 def mis_turnos_productor_view(request):
     services.cancelar_turnos_vencidos()
     productor = request.perfil
-    turnos = list(productor.turnos.filter(estado__in=ACTIVOS).select_related('empresa'))
+    turnos = list(productor.turnos.filter(estado__in=ACTIVOS).select_related('empresa', 'rampa'))
 
     # --- Lazy Refresh climático: actualiza en background, sin bloquear la vista ---
     for t in turnos:
@@ -89,7 +89,7 @@ def mis_turnos_productor_view(request):
 def registros_historicos_view(request):
     services.cancelar_turnos_vencidos()
     productor = request.perfil
-    base = productor.turnos.select_related('empresa')
+    base = productor.turnos.select_related('empresa', 'rampa')
     estado = request.GET.get('estado', '')
     turnos_qs = (base.filter(estado=estado) if estado in EstadoTurno.values else base).order_by('-fecha_entrega', '-id')
     paginator = Paginator(turnos_qs, 10)
@@ -173,7 +173,7 @@ def rendimiento_productor_view(request):
 @login_required
 def comprobante_view(request, codigo):
     turno = get_object_or_404(
-        Turno.objects.select_related('empresa', 'productor', 'recorredor'), codigo=codigo
+        Turno.objects.select_related('empresa', 'productor', 'recorredor', 'rampa'), codigo=codigo
     )
     user = request.user
     permitido = (
@@ -201,7 +201,7 @@ def panel_recorredor_view(request):
     recorredor = request.perfil
     empresa = recorredor.empresa_asignada
     hoy = timezone.localdate()
-    turnos = Turno.objects.filter(empresa=empresa).select_related('productor')
+    turnos = Turno.objects.filter(empresa=empresa).select_related('productor', 'rampa')
     pendientes = list(turnos.filter(estado=EstadoTurno.PENDIENTE).order_by('fecha_entrega', 'franja_horaria'))
     for t in pendientes:
         t.cumplimiento = services.evaluar_cumplimiento(t.productor)
@@ -238,12 +238,12 @@ def asignar_turno_view(request):
             messages.success(
                 request,
                 f'Turno {turno.codigo} asignado y confirmado: {turno.fecha_entrega:%d/%m/%Y}, '
-                f'franja {turno.franja_horaria} hs.'
+                f'franja {turno.franja_horaria} hs, {turno.rampa}.'
             )
             aviso = armar_aviso(
                 turno.productor,
                 f'SOLTAT · {empresa.nombre} le asignó el turno {turno.codigo} para el '
-                f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs '
+                f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs, {turno.rampa} '
                 f'({services.kg(turno.kilos_estimados)}, corte {turno.get_corte_tabaco_display()}).'
             )
             return _mostrar_avisos(request, [aviso], 'Avisar al productor del turno asignado',
@@ -271,12 +271,12 @@ def confirmar_turno_view(request, turno_id):
     messages.success(
         request,
         f'Turno {turno.codigo} confirmado y asignado por sistema para el '
-        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs.'
+        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs, {turno.rampa}.'
     )
     aviso = armar_aviso(
         turno.productor,
         f'SOLTAT · {turno.empresa.nombre} confirmó su turno {turno.codigo} del '
-        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs.'
+        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs, {turno.rampa}.'
     )
     return _mostrar_avisos(request, [aviso], 'Avisar al productor de la confirmación',
                            reverse('turnos:panel_recorredor'))
@@ -307,8 +307,8 @@ def panel_operador_view(request):
     turnos = (
         Turno.objects.filter(fecha_entrega=fecha)
         .exclude(estado__in=[EstadoTurno.PENDIENTE, EstadoTurno.CANCELADO])
-        .select_related('empresa', 'productor')
-        .order_by('franja_horaria', 'id')
+        .select_related('empresa', 'productor', 'rampa')
+        .order_by('franja_horaria', 'rampa__numero', 'id')
     )
     empresa_id = request.GET.get('empresa', '')
     if empresa_id.isdigit():
@@ -322,6 +322,7 @@ def panel_operador_view(request):
         'en_playa': turnos.filter(estado=EstadoTurno.EN_PLAYA).count(),
         'por_ingresar': turnos.filter(estado=EstadoTurno.CONFIRMADO).count(),
         'descargados': turnos.filter(estado=EstadoTurno.DESCARGADO).count(),
+        'rampas': services.ocupacion_rampas_centro(fecha),
     })
 
 
@@ -385,12 +386,13 @@ def panel_empresa_view(request):
 
     turnos = (
         Turno.objects.filter(empresa=empresa, fecha_entrega=fecha)
-        .select_related('productor').order_by('franja_horaria', 'id')
+        .select_related('productor', 'rampa').order_by('franja_horaria', 'rampa__numero', 'id')
     )
     return render(request, 'turnos/empresa_panel.html', {
         **_contexto_fecha(fecha),
         'empresa': empresa,
         'disponibilidad': services.consultar_disponibilidad(empresa, fecha),
+        'rampas': services.ocupacion_rampas(empresa, fecha),
         'turnos': turnos,
         'pendientes': Turno.objects.filter(empresa=empresa, estado=EstadoTurno.PENDIENTE).count(),
         'form': form,
@@ -401,7 +403,7 @@ def panel_empresa_view(request):
 def historial_empresa_view(request):
     services.cancelar_turnos_vencidos()
     empresa = request.perfil
-    base = Turno.objects.filter(empresa=empresa).select_related('productor', 'comprobante')
+    base = Turno.objects.filter(empresa=empresa).select_related('productor', 'comprobante', 'rampa')
     estado = request.GET.get('estado', '')
     turnos = base.filter(estado=estado) if estado in EstadoTurno.values else base
     return render(request, 'turnos/empresa_historial.html', {

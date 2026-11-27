@@ -37,3 +37,20 @@ FRANJAS_HORARIAS = [
 
 # Hora de inicio de cada franja (ej. '06:00 - 08:00' -> 6)
 INICIO_FRANJA = {valor: int(valor[:2]) for valor, _ in FRANJAS_HORARIAS}
+
+
+class HorarioPreferente(models.TextChoices):
+    """Parte del día en la que una empresa tiene prioridad sobre sus rampas."""
+    MANANA = 'MANANA', 'Mañana (06:00 a 14:00)'
+    TARDE = 'TARDE', 'Tarde (14:00 a 22:00)'
+
+
+# Hora en la que termina la mañana y empieza la tarde.
+HORA_INICIO_TARDE = 14
+
+
+def horario_de_franja(franja) -> str:
+    """'06:00 - 08:00' -> MANANA, '14:00 - 16:00' -> TARDE."""
+    if INICIO_FRANJA[franja] >= HORA_INICIO_TARDE:
+        return HorarioPreferente.TARDE
+    return HorarioPreferente.MANANA

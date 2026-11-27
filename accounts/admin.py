@@ -50,6 +50,7 @@ registrar_tipo_usuario(
 )
 registrar_tipo_usuario(
     EmpresaAcopio,
-    campos_extra=('nombre', 'capacidad_diaria_kg', 'capacidad_franja_kg', 'activa', 'corte_solicitado'),
-    list_extra=('nombre', 'capacidad_diaria_kg', 'capacidad_franja_kg', 'activa'),
+    campos_extra=('nombre', 'capacidad_diaria_kg', 'capacidad_franja_kg', 'horario_preferente', 'activa',
+                  'corte_solicitado'),
+    list_extra=('nombre', 'capacidad_diaria_kg', 'capacidad_franja_kg', 'horario_preferente', 'activa'),
 )

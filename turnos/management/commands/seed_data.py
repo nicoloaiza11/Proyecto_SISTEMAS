@@ -24,8 +24,8 @@ from django.utils import timezone
 
 from accounts.models import Administrador, EmpresaAcopio, OperadorAcopio, Productor, Recorredor, Usuario
 from turnos import services
-from turnos.choices import FRANJAS_HORARIAS, CorteTabaco, EstadoTurno
-from turnos.models import Comprobante, CupoProductor, RegistroOperador, Turno
+from turnos.choices import FRANJAS_HORARIAS, CorteTabaco, EstadoTurno, HorarioPreferente
+from turnos.models import Comprobante, CupoProductor, Rampa, RegistroOperador, Turno
 
 FRANJAS = [valor for valor, _ in FRANJAS_HORARIAS]
 
@@ -68,6 +68,16 @@ class Command(BaseCommand):
         ]
         coop, alliance, massalin = empresas
 
+        # Rampas de descarga: Massalin 1-2 y Alliance One 3-5 con prioridad a la
+        # mañana; la Cooperativa usa las 5 con prioridad a la tarde.
+        for empresa, horario in ((coop, HorarioPreferente.TARDE), (alliance, HorarioPreferente.MANANA),
+                                 (massalin, HorarioPreferente.MANANA)):
+            empresa.horario_preferente = horario
+            empresa.save(update_fields=['horario_preferente'])
+        for numero in range(1, 6):
+            rampa, _ = Rampa.objects.get_or_create(numero=numero)
+            rampa.empresas.set([coop, massalin] if numero <= 2 else [coop, alliance])
+
         recorredores = [
             crear_usuario(Recorredor, f'recorredor{i}', 'recorredor123', f'2011111111{i}',
                           first_name=nombre, last_name=apellido, telefono=f'+54 388 450000{i}',
@@ -109,15 +119,20 @@ class Command(BaseCommand):
         def turno(productor, empresa, recorredor, dias, franja, kilos, corte, estado, kilos_reales=None,
                   precio=None, arribo_min=None, espera_min=None):
             fecha = hoy + timedelta(days=dias)
+            pendiente = estado == EstadoTurno.PENDIENTE
+            rampa = None
+            if not pendiente and estado != EstadoTurno.CANCELADO:
+                libres = services.rampas_disponibles(empresa, fecha, franja, hoy=fecha)
+                rampa = libres[0] if libres else None
             t = Turno.objects.create(
                 codigo=services.generar_codigo_turno(fecha), productor=productor, empresa=empresa,
-                recorredor=recorredor if estado != EstadoTurno.PENDIENTE else None,
+                recorredor=None if pendiente else recorredor,
                 kilos_estimados=kilos, patente_vehiculo=f'AE{random.randint(100, 999)}JY',
-                fecha_entrega=fecha, franja_horaria=franja, estado=estado, corte_tabaco=corte,
+                # Las solicitudes pendientes no tienen fecha, franja ni rampa hasta que se confirman.
+                fecha_entrega=None if pendiente else fecha, franja_horaria=None if pendiente else franja,
+                rampa=rampa, estado=estado, corte_tabaco=corte,
+                fue_confirmado=not pendiente and bool(recorredor),
             )
-            if estado in (EstadoTurno.CONFIRMADO, EstadoTurno.EN_PLAYA, EstadoTurno.DESCARGADO) \
-                    or (estado == EstadoTurno.CANCELADO and recorredor):
-                services.emitir_comprobante(t)
             inicio = t.inicio_franja
             if estado in (EstadoTurno.EN_PLAYA, EstadoTurno.DESCARGADO):
                 t.hora_arribo_playa = inicio + timedelta(minutes=arribo_min if arribo_min is not None else random.randint(-20, 60))
@@ -126,7 +141,8 @@ class Command(BaseCommand):
                 t.kilos_reales = kilos_reales or int(kilos * random.uniform(0.94, 1.04))
                 RegistroOperador.objects.create(turno=t, operador=operador, peso_acordado=kilos,
                                                 peso_real=t.kilos_reales, corte_tabaco=corte)
-                Comprobante.objects.filter(turno=t).update(peso_real=t.kilos_reales, precio=precio)
+                # El comprobante se emite en la báscula, con peso real, precio y corte.
+                services.emitir_comprobante(t, t.kilos_reales, precio or Decimal('3.40'), corte)
             t.save()
             return t
 

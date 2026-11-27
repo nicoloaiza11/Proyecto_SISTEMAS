@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Comprobante, CupoProductor, RegistroOperador, Turno
+from .models import Comprobante, CupoProductor, Rampa, RegistroOperador, Turno
 
 
 @admin.register(CupoProductor)
@@ -11,13 +11,24 @@ class CupoProductorAdmin(admin.ModelAdmin):
     autocomplete_fields = ('productor', 'recorredor')
 
 
+@admin.register(Rampa)
+class RampaAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'empresas_habilitadas', 'activa')
+    list_editable = ('activa',)
+    filter_horizontal = ('empresas',)
+
+    @admin.display(description='Empresas habilitadas')
+    def empresas_habilitadas(self, obj):
+        return ', '.join(e.nombre for e in obj.empresas.all()) or '-'
+
+
 @admin.register(Turno)
 class TurnoAdmin(admin.ModelAdmin):
     list_display = (
-        'codigo', 'productor', 'empresa', 'fecha_entrega', 'franja_horaria',
+        'codigo', 'productor', 'empresa', 'fecha_entrega', 'franja_horaria', 'rampa',
         'corte_tabaco', 'kilos_estimados', 'kilos_reales', 'estado',
     )
-    list_filter = ('estado', 'corte_tabaco', 'empresa', 'fecha_entrega')
+    list_filter = ('estado', 'corte_tabaco', 'empresa', 'rampa', 'fecha_entrega')
     search_fields = ('codigo', 'productor__cuit_dni', 'productor__username', 'patente_vehiculo')
     date_hierarchy = 'fecha_entrega'
     readonly_fields = ('codigo',)

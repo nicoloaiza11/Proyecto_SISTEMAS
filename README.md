@@ -70,6 +70,7 @@ Hay también recorredores de Alliance One (`20111111112`) y Massalin (`201111111
 
 - **Turnos:** el productor los solicita y quedan PENDIENTES hasta que el recorredor de la empresa los confirma. Los que asigna el recorredor nacen CONFIRMADOS.
 - **Franjas:** 8 franjas de 2 horas, de 06:00 a 22:00. El sistema asigna la primera franja con lugar, respetando la capacidad por franja y la capacidad diaria de la empresa.
+- **Rampas de descarga:** 5 rampas, un turno por rampa y franja. Massalin usa la 1 y la 2, Alliance One de la 3 a la 5 (prioridad de 06:00 a 14:00) y la Cooperativa las 5 (prioridad de 14:00 a 22:00). El sistema busca primero en el horario preferente de la empresa; fuera de él solo toma rampas libres el mismo día de la entrega. El reparto y el horario se cambian desde `/admin`.
 - **Premios y castigos** (últimos 90 días). Cuentan como incumplimiento: no presentarse, cancelar un turno confirmado y un desvío de kilos mayor al 20 %.
   - 0 incumplimientos: nivel **Bueno**, franjas desde las 06:00.
   - 1: **Regular**, desde las 12:00.

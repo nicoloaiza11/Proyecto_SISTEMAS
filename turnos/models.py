@@ -1,6 +1,6 @@
 """
 Entidades de turnos según el diagrama de clases:
-CupoProductor, Turno, RegistroOperador y Comprobante.
+CupoProductor, Rampa, Turno, RegistroOperador y Comprobante.
 """
 from datetime import datetime, time, timedelta
 from decimal import Decimal
@@ -43,6 +43,27 @@ class CupoProductor(models.Model):
         return self.recorredor.empresa_asignada
 
 
+class Rampa(models.Model):
+    """
+    Rampa (puerta) de descarga del centro de acopio. Cada rampa recibe un solo
+    turno por franja y la pueden usar solo las empresas habilitadas en ella.
+    """
+    numero = models.PositiveSmallIntegerField(unique=True, verbose_name='Número')
+    empresas = models.ManyToManyField(
+        EmpresaAcopio, related_name='rampas', verbose_name='Empresas habilitadas',
+        help_text='Empresas que pueden descargar en esta rampa.',
+    )
+    activa = models.BooleanField(default=True, verbose_name='¿Activa?')
+
+    class Meta:
+        verbose_name = 'Rampa de descarga'
+        verbose_name_plural = 'Rampas de descarga'
+        ordering = ['numero']
+
+    def __str__(self):
+        return f'Rampa {self.numero}'
+
+
 class Turno(models.Model):
     """Turno de entrega de tabaco. Lleva un único corte de tabaco."""
 
@@ -71,6 +92,10 @@ class Turno(models.Model):
     patente_vehiculo = models.CharField(max_length=20, blank=True, default='', verbose_name='Patente del vehículo')
     fecha_entrega = models.DateField(null=True, blank=True, verbose_name='Fecha de entrega')
     franja_horaria = models.CharField(max_length=20, choices=FRANJAS_HORARIAS, null=True, blank=True, verbose_name='Franja horaria')
+    rampa = models.ForeignKey(
+        Rampa, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='turnos', verbose_name='Rampa de descarga',
+    )
     fue_confirmado = models.BooleanField(default=False, verbose_name='Fue confirmado')
     cancelado_por_ausencia = models.BooleanField(default=False, verbose_name='Cancelado por ausencia')
     estado = models.CharField(
@@ -100,6 +125,14 @@ class Turno(models.Model):
         verbose_name_plural = 'Turnos'
         ordering = ['fecha_entrega', 'franja_horaria', 'id']
         indexes = [models.Index(fields=['empresa', 'fecha_entrega', 'estado'])]
+        constraints = [
+            # Un solo turno activo por rampa y franja.
+            models.UniqueConstraint(
+                fields=['rampa', 'fecha_entrega', 'franja_horaria'],
+                condition=models.Q(rampa__isnull=False) & ~models.Q(estado=EstadoTurno.CANCELADO),
+                name='turno_unico_por_rampa_y_franja',
+            ),
+        ]
 
     def __str__(self):
         fecha = self.fecha_entrega.strftime('%d/%m/%Y') if self.fecha_entrega else 'Pendiente de asignación'

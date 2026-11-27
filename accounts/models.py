@@ -20,7 +20,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from turnos.choices import CorteTabaco
+from turnos.choices import CorteTabaco, HorarioPreferente
 
 
 CAPACIDAD_DIARIA_MIN_KG = 200_000
@@ -241,6 +241,14 @@ class EmpresaAcopio(Usuario):
         blank=True,
         verbose_name='Corte solicitado',
         help_text='Corte de tabaco de la última convocatoria publicada.',
+    )
+    horario_preferente = models.CharField(
+        max_length=6,
+        choices=HorarioPreferente.choices,
+        default=HorarioPreferente.MANANA,
+        verbose_name='Horario preferente',
+        help_text='Parte del día en la que la empresa tiene prioridad sobre sus rampas. '
+                  'Fuera de ese horario solo puede usar rampas libres el mismo día de la entrega.',
     )
 
     class Meta:
