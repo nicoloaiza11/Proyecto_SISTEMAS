@@ -152,7 +152,10 @@ class Productor(Usuario):
         return services.cancelar_turno_productor(self, turno, mensaje)
 
     def consultar_mis_turnos(self):
-        return list(self.turnos.select_related('empresa').order_by('-fecha_entrega', 'franja_horaria'))
+        from turnos.models import ORDEN_HORARIO
+        from django.db.models import F
+        return list(self.turnos.select_related('empresa').order_by(
+            F('fecha_entrega').desc(nulls_last=True), *ORDEN_HORARIO))
 
     def consultar_rendimiento(self):
         from turnos import services

@@ -16,23 +16,26 @@ Lógica de negocio de SOLTAT.
   en los últimos 90 días (ver evaluar_cumplimiento).
 - Avisos: mensajes de WhatsApp mediante enlaces wa.me (ver whatsapp.py).
 """
+import functools
+import logging
 import math
 import uuid
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Max, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from accounts.models import EmpresaAcopio, Productor
 from .choices import (
-    APERTURA_MIN, CIERRE_MIN, HORA_APERTURA, HORA_CIERRE, INICIO_TARDE_MIN, INTERVALO_MIN,
+    APERTURA_MIN, CIERRE_MIN, FRANJAS_HORARIAS, HORA_APERTURA, HORA_CIERRE, INICIO_FRANJA, INICIO_TARDE_MIN,
+    INTERVALO_MIN,
     CorteTabaco, EstadoTurno, HorarioPreferente, a_hora, a_minutos, franja_de_minuto,
     horario_de_minuto, texto_duracion,
 )
-from .models import Comprobante, CupoProductor, OcupacionRampa, Rampa, RegistroOperador, Turno
+from .models import ORDEN_RECIENTES, Comprobante, CupoProductor, OcupacionRampa, Rampa, RegistroOperador, Turno
 from .whatsapp import armar_aviso
 
 
@@ -81,6 +84,38 @@ class HorarioOcupadoError(TurnoError):
     """Otra reserva tomó la rampa en ese horario al mismo tiempo."""
 
 
+class AgendaOcupadaError(TurnoError):
+    """La base de datos siguió bloqueada por otras reservas más allá del tiempo de espera."""
+
+
+logger = logging.getLogger(__name__)
+
+
+def _es_bloqueo(error) -> bool:
+    return 'locked' in str(error).lower()
+
+
+def sin_bloqueos(funcion):
+    """
+    Convierte un bloqueo de la base de datos (SQLite: 'database is locked')
+    en un error de negocio con un mensaje para el usuario, en vez de un
+    error 500. Con transaction_mode IMMEDIATE y timeout 20 s solo ocurre si
+    hay muchas reservas simultáneas durante más de 20 segundos.
+    """
+    @functools.wraps(funcion)
+    def envoltura(*args, **kwargs):
+        try:
+            return funcion(*args, **kwargs)
+        except OperationalError as error:
+            if not _es_bloqueo(error):
+                raise
+            logger.warning('Agenda bloqueada en %s: %s', funcion.__name__, error)
+            raise AgendaOcupadaError(
+                'El sistema está procesando otras reservas en este momento. Intente nuevamente en unos segundos.'
+            ) from error
+    return envoltura
+
+
 def kg(valor) -> str:
     """Formatea kilos con separador de miles argentino: 12500 -> '12.500 kg'."""
     return f'{int(valor):,} kg'.replace(',', '.')
@@ -103,14 +138,38 @@ def kilos_ocupados(empresa, fecha) -> int:
     )['total']
 
 
+def capacidad_por_hora(empresa, fecha, hoy=None) -> dict:
+    """
+    {minuto_de_la_hora: kilos} que la empresa puede descargar en cada hora
+    según las rampas que realmente tiene a su disposición: cuenta los tramos
+    de 30 min de sus rampas que están libres y disponibles para ella (sin
+    turnos de otras empresas ni prioridad de otra) o que ocupa con sus propios
+    turnos. Como las rampas se comparten, puede cambiar de hora en hora.
+    """
+    rampas = _rampas_de(empresa)
+    ocupadas = rampas_ocupadas(fecha)
+    liberada = rampa_liberada(fecha, hoy)
+    capacidad = {}
+    for hora in range(APERTURA_MIN, CIERRE_MIN, 60):
+        tramos = 0
+        for rampa in rampas:
+            usados = ocupadas.get(rampa.pk, {})
+            for m in (hora, hora + INTERVALO_MIN):
+                propio = m in usados and usados[m].empresa_id == empresa.pk
+                if propio or _tramo_disponible(rampa, empresa, m, usados, liberada):
+                    tramos += 1
+        capacidad[hora] = round(empresa.velocidad_descarga_kg_hora * tramos * INTERVALO_MIN / 60)
+    return capacidad
+
+
 def ocupacion_por_hora(empresa, fecha) -> list:
     """
     Kilos que la empresa tiene programados en cada hora de 06:00 a 22:00.
     Los kilos de un turno se reparten en forma pareja durante su duración.
-    La capacidad de cada hora es la velocidad de descarga por la cantidad de
-    rampas de la empresa (todas atendiendo a la vez).
+    La capacidad de cada hora sale de las rampas que la empresa tiene
+    realmente disponibles en esa hora (ver capacidad_por_hora).
     """
-    capacidad = empresa.velocidad_descarga_kg_hora * len(_rampas_de(empresa))
+    capacidades = capacidad_por_hora(empresa, fecha)
     horas = {m: 0.0 for m in range(APERTURA_MIN, CIERRE_MIN, 60)}
     for t in _turnos_que_ocupan(empresa, fecha):
         inicio, fin, duracion = t.hora_inicio_efectiva, t.hora_fin_efectiva, t.duracion_efectiva
@@ -123,6 +182,7 @@ def ocupacion_por_hora(empresa, fecha) -> list:
     resultado = []
     for m, kilos in horas.items():
         usados = round(kilos)
+        capacidad = capacidades[m]
         resultado.append({
             'valor': f'{a_hora(m):%H:%M}',
             'etiqueta': f'{a_hora(m):%H:%M} a {a_hora(m + 60):%H:%M} hs',
@@ -133,11 +193,40 @@ def ocupacion_por_hora(empresa, fecha) -> list:
     return resultado
 
 
+def _franjas_compatibles(horas) -> list:
+    """
+    Formato anterior de la API (franjas de 2 h), armado sumando las horas de
+    cada franja. Se mantiene para no romper a quien ya consume la API.
+    """
+    franjas = []
+    for valor, etiqueta in FRANJAS_HORARIAS:
+        de_la_franja = [h for h in horas if INICIO_FRANJA[valor] <= int(h['valor'][:2]) < INICIO_FRANJA[valor] + 2]
+        ocupados = sum(h['ocupados'] for h in de_la_franja)
+        capacidad = sum(h['capacidad'] for h in de_la_franja)
+        franjas.append({
+            'valor': valor,
+            'etiqueta': etiqueta,
+            'ocupados': ocupados,
+            'capacidad': capacidad,
+            'disponibles': max(0, capacidad - ocupados),
+            'porcentaje': min(100, round(ocupados * 100 / capacidad)) if capacidad else 100,
+        })
+    return franjas
+
+
 def consultar_disponibilidad(empresa, fecha, kilos_solicitados=0) -> dict:
+    """
+    Disponibilidad del día (también es la respuesta de /api/disponibilidad/).
+    Claves nuevas: 'velocidad_descarga' y 'horas' (ocupación y capacidad por hora).
+    Claves anteriores, conservadas por compatibilidad y marcadas como obsoletas:
+    'capacidad_franja' (dato de referencia) y 'franjas' (suma de las horas de
+    cada franja de 2 h). Se podrán quitar cuando nadie las use.
+    """
     capacidad = empresa.capacidad_diaria_kg
     ocupados = kilos_ocupados(empresa, fecha)
     disponibles = max(0, capacidad - ocupados)
     porcentaje = min(100.0, round(ocupados * 100 / capacidad, 1)) if capacidad else 100.0
+    horas = ocupacion_por_hora(empresa, fecha)
     if disponibles == 0:
         semaforo = 'completo'
     elif porcentaje >= 80:
@@ -155,7 +244,10 @@ def consultar_disponibilidad(empresa, fecha, kilos_solicitados=0) -> dict:
         'porcentaje_ocupacion': porcentaje,
         'tiene_cupo': kilos_solicitados <= disponibles,
         'semaforo': semaforo,
-        'horas': ocupacion_por_hora(empresa, fecha),
+        'horas': horas,
+        # Obsoletas (formato anterior), conservadas por compatibilidad:
+        'capacidad_franja': empresa.capacidad_franja_kg,
+        'franjas': _franjas_compatibles(horas),
     }
 
 
@@ -274,9 +366,16 @@ def ocupacion_rampas_centro(fecha) -> dict:
     return {'rampas': rampas, 'filas': filas, 'marcas': _marcas_horarias()}
 
 
-def _inicios_posibles(empresa, fecha, duracion, hora_minima, ahora):
+def fin_de_la_agenda(empresa, fecha):
+    """Minuto en que termina el último turno de la empresa ese día (o None si no tiene turnos)."""
+    fines = [a_minutos(t.hora_fin_efectiva) for t in _turnos_que_ocupan(empresa, fecha)
+             if t.hora_fin_efectiva]
+    return max(fines) if fines else None
+
+
+def _inicios_posibles(empresa, fecha, duracion, hora_minima, ahora, desde_minuto=None):
     """Horarios de inicio (cada 30 min) en que el turno entra completo antes del cierre."""
-    primero = max(APERTURA_MIN, hora_minima * 60)
+    primero = max(APERTURA_MIN, hora_minima * 60, desde_minuto or 0)
     if fecha == ahora.date():
         # Hoy solo se ofrecen tramos que todavía no empezaron.
         actual = ahora.hour * 60 + ahora.minute
@@ -291,13 +390,15 @@ def _inicios_posibles(empresa, fecha, duracion, hora_minima, ahora):
     return sorted(inicios, key=lambda i: (not en_su_horario(i), i))
 
 
-def buscar_bloque(empresa, fecha, kilos, hora_minima=6, ahora=None):
+def buscar_bloque(empresa, fecha, kilos, hora_minima=6, ahora=None, al_final_de_la_agenda=False):
     """
     Busca un bloque continuo para descargar `kilos` el día `fecha`:
     (inicio_min, fin_min, rampa). Durante todo el bloque la rampa debe estar
     libre y disponible para la empresa (prioridad por tramo). Respeta la
     capacidad diaria y el horario de 06:00 a 22:00. Si la fecha es hoy, solo
-    usa tramos que todavía no empezaron. Devuelve (None, None, None) si no hay lugar.
+    usa tramos que todavía no empezaron. Con `al_final_de_la_agenda` (nivel
+    MALO), el turno empieza cuando termina el último turno de la empresa ese
+    día, nunca antes ni al mismo tiempo. Devuelve (None, None, None) si no hay lugar.
     """
     ahora = ahora or timezone.localtime()
     if fecha < ahora.date():
@@ -310,7 +411,8 @@ def buscar_bloque(empresa, fecha, kilos, hora_minima=6, ahora=None):
     rampas = _rampas_de(empresa)
     ocupadas = rampas_ocupadas(fecha)
     liberada = rampa_liberada(fecha, ahora.date())
-    for inicio in _inicios_posibles(empresa, fecha, duracion, hora_minima, ahora):
+    desde_minuto = fin_de_la_agenda(empresa, fecha) if al_final_de_la_agenda else None
+    for inicio in _inicios_posibles(empresa, fecha, duracion, hora_minima, ahora, desde_minuto):
         for rampa in rampas:
             usados = ocupadas.get(rampa.pk, {})
             if all(_tramo_disponible(rampa, empresa, m, usados, liberada)
@@ -319,25 +421,34 @@ def buscar_bloque(empresa, fecha, kilos, hora_minima=6, ahora=None):
     return None, None, None
 
 
+CAMPOS_AGENDA = ['hora_inicio', 'hora_fin', 'duracion_min', 'franja_horaria', 'rampa']
+
+
+@sin_bloqueos
 def reservar_bloque(turno, inicio, fin, rampa) -> Turno:
     """
-    Guarda el horario y la rampa del turno y reserva sus tramos de 30 min.
-    Si otra reserva simultánea ya tomó alguno de esos tramos, la restricción
-    única de OcupacionRampa lo impide y se informa el conflicto.
+    Guarda el horario y la rampa del turno y reserva sus tramos de 30 min,
+    todo en una sola transacción: si algún tramo ya está tomado (por ejemplo,
+    por otra reserva simultánea), la restricción única de OcupacionRampa lo
+    impide, se deshace todo (horario, rampa y tramos) y se informa el conflicto.
+    No depende de que quien la llama haya abierto una transacción.
     """
-    turno.hora_inicio = a_hora(inicio)
-    turno.hora_fin = a_hora(fin)
-    turno.duracion_min = fin - inicio
-    turno.franja_horaria = franja_de_minuto(inicio)
-    turno.rampa = rampa
-    turno.save(update_fields=['hora_inicio', 'hora_fin', 'duracion_min', 'franja_horaria', 'rampa'])
+    anteriores = {campo: getattr(turno, campo) for campo in CAMPOS_AGENDA}
     try:
         with transaction.atomic():
+            turno.hora_inicio = a_hora(inicio)
+            turno.hora_fin = a_hora(fin)
+            turno.duracion_min = fin - inicio
+            turno.franja_horaria = franja_de_minuto(inicio)
+            turno.rampa = rampa
+            turno.save(update_fields=CAMPOS_AGENDA)
             OcupacionRampa.objects.bulk_create([
                 OcupacionRampa(turno=turno, rampa=rampa, fecha=turno.fecha_entrega, inicio=a_hora(m))
                 for m in range(inicio, fin, INTERVALO_MIN)
             ])
     except IntegrityError:
+        for campo, valor in anteriores.items():  # el objeto en memoria vuelve a como estaba
+            setattr(turno, campo, valor)
         raise HorarioOcupadoError(
             f'Otro turno acaba de reservar la {rampa} en ese horario. Intente nuevamente.'
         )
@@ -500,7 +611,8 @@ def emitir_comprobante(turno, peso_real, precio, corte_tabaco) -> Comprobante:
     return comprobante
 
 
-def buscar_proxima_disponibilidad(empresa, kilos, hora_minima=6, desde_fecha=None, max_dias=30):
+def buscar_proxima_disponibilidad(empresa, kilos, hora_minima=6, desde_fecha=None, max_dias=30,
+                                  al_final_de_la_agenda=False):
     """
     Devuelve la primera tupla (fecha, inicio_min, fin_min, rampa) con un bloque
     continuo para `kilos` en la `empresa`, desde `desde_fecha` y por hasta
@@ -510,7 +622,8 @@ def buscar_proxima_disponibilidad(empresa, kilos, hora_minima=6, desde_fecha=Non
     desde = max(desde_fecha or ahora.date(), ahora.date())
     for offset in range(max_dias):
         f = desde + timedelta(days=offset)
-        inicio, fin, rampa = buscar_bloque(empresa, f, kilos, hora_minima=hora_minima, ahora=ahora)
+        inicio, fin, rampa = buscar_bloque(empresa, f, kilos, hora_minima=hora_minima, ahora=ahora,
+                                           al_final_de_la_agenda=al_final_de_la_agenda)
         if inicio is not None:
             return f, inicio, fin, rampa
     return None, None, None, None
@@ -601,10 +714,11 @@ def _crear_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo, fech
         return turno
 
 
+@sin_bloqueos
 def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo='') -> Turno:
     """
     El productor solicita un turno sin elegir fecha: queda PENDIENTE hasta que lo confirme la empresa/recorredor.
-    El sistema asignará automáticamente la fecha y franja al momento de la confirmación.
+    El sistema asignará automáticamente la fecha y el horario (según los kilos) al confirmarlo.
     """
     cumplimiento = evaluar_cumplimiento(productor)
     if cumplimiento['bloqueado']:
@@ -647,10 +761,11 @@ def solicitar_turno(productor, empresa, kilos, corte_tabaco, patente_vehiculo=''
         return turno
 
 
+@sin_bloqueos
 def asignar_turno(recorredor, productor, kilos, corte_tabaco, patente_vehiculo, fecha_entrega) -> Turno:
     """
     El recorredor asigna un turno: nace CONFIRMADO (sin comprobante hasta descarga).
-    El recorredor puede asignar a productores bloqueados y en cualquier franja.
+    El recorredor puede asignar a productores bloqueados y en cualquier horario disponible.
     """
     return _crear_turno(
         productor, recorredor.empresa_asignada, kilos, corte_tabaco, patente_vehiculo, fecha_entrega,
@@ -663,6 +778,7 @@ def _verificar_empresa_recorredor(recorredor, turno):
         raise TurnoError('El turno pertenece a otra empresa.')
 
 
+@sin_bloqueos
 def confirmar_turno(recorredor, turno) -> Turno:
     _verificar_empresa_recorredor(recorredor, turno)
     with transaction.atomic():
@@ -675,8 +791,10 @@ def confirmar_turno(recorredor, turno) -> Turno:
         dias_demora = cumplimiento.get('dias_demora') or 0
         desde_fecha = _hoy() + timedelta(days=dias_demora)
 
-        # Para nivel MALO: al menos 5 días después o al final de los turnos ya programados
-        if cumplimiento['nivel'] == 'MALO':
+        # Nivel MALO: al menos 5 días después, desde el último día con turnos
+        # programados y, ese día, después del último turno de la agenda.
+        es_malo = cumplimiento['nivel'] == 'MALO'
+        if es_malo:
             ultima_fecha = (
                 Turno.objects.filter(empresa=empresa, fecha_entrega__isnull=False)
                 .exclude(estado=EstadoTurno.CANCELADO)
@@ -687,7 +805,8 @@ def confirmar_turno(recorredor, turno) -> Turno:
 
         # El sistema busca el primer bloque continuo con rampa libre para los kilos del turno.
         fecha_asignada, inicio, fin, rampa = buscar_proxima_disponibilidad(
-            empresa, turno.kilos_estimados, hora_minima=6, desde_fecha=desde_fecha
+            empresa, turno.kilos_estimados, hora_minima=6, desde_fecha=desde_fecha,
+            al_final_de_la_agenda=es_malo,
         )
         if not fecha_asignada:
             raise CupoExcedidoError(
@@ -712,9 +831,18 @@ def cancelar_turnos_vencidos(hoy=None) -> int:
     y conserva `fue_confirmado=True` para diferenciarlo de una cancelación manual.
     """
     hoy = hoy or _hoy()
-    vencidos = Turno.objects.filter(estado=EstadoTurno.CONFIRMADO, fecha_entrega__lt=hoy)
-    OcupacionRampa.objects.filter(turno__in=vencidos).delete()
-    return vencidos.update(estado=EstadoTurno.CANCELADO, cancelado_por_ausencia=True)
+    try:
+        with transaction.atomic():
+            vencidos = Turno.objects.filter(estado=EstadoTurno.CONFIRMADO, fecha_entrega__lt=hoy)
+            OcupacionRampa.objects.filter(turno__in=vencidos).delete()
+            return vencidos.update(estado=EstadoTurno.CANCELADO, cancelado_por_ausencia=True)
+    except OperationalError as error:
+        # Se ejecuta al abrir varias pantallas: si la base está ocupada se
+        # reintenta en la próxima carga en lugar de mostrar un error.
+        if not _es_bloqueo(error):
+            raise
+        logger.warning('No se cancelaron turnos vencidos (base bloqueada): %s', error)
+        return 0
 
 
 def _texto_turno(turno) -> str:
@@ -724,6 +852,7 @@ def _texto_turno(turno) -> str:
     return f'{turno.codigo} (pendiente de asignación)'
 
 
+@sin_bloqueos
 def cancelar_turno_productor(productor, turno, mensaje='') -> list:
     """
     PENDIENTE: se cancela sin más.
@@ -754,6 +883,7 @@ def cancelar_turno_productor(productor, turno, mensaje='') -> list:
     return [armar_aviso(d, texto) for d in destinatarios]
 
 
+@sin_bloqueos
 def cancelar_turno_recorredor(recorredor, turno, mensaje='') -> list:
     """
     El recorredor rechaza un turno pendiente o cancela uno confirmado.
@@ -777,6 +907,7 @@ def cancelar_turno_recorredor(recorredor, turno, mensaje='') -> list:
 # ---------------------------------------------------------------------------
 # Operación en garita y báscula
 # ---------------------------------------------------------------------------
+@sin_bloqueos
 def registrar_ingreso_garita(operador, turno, momento=None, patente_vehiculo=None) -> Turno:
     momento = momento or timezone.now()
     if turno.fecha_entrega != timezone.localtime(momento).date():
@@ -798,6 +929,7 @@ def registrar_ingreso_garita(operador, turno, momento=None, patente_vehiculo=Non
     return turno
 
 
+@sin_bloqueos
 def registrar_pesaje_y_descarga(operador, turno, peso_real, corte_tabaco, precio, momento=None) -> RegistroOperador:
     try:
         peso_real = int(peso_real)
@@ -839,6 +971,7 @@ def registrar_pesaje_y_descarga(operador, turno, peso_real, corte_tabaco, precio
 # ---------------------------------------------------------------------------
 # Convocatorias de la empresa
 # ---------------------------------------------------------------------------
+@sin_bloqueos
 def enviar_aviso(empresa, corte_tabaco, kilos, mensaje='') -> list:
     """
     La empresa publica qué corte busca recibir y cuántos kilos. Se arma un
@@ -872,7 +1005,7 @@ def _promedio(valores):
 
 def rendimiento_productor(productor) -> dict:
     hoy = _hoy()
-    turnos = list(productor.turnos.select_related('empresa').order_by('-fecha_entrega'))
+    turnos = list(productor.turnos.select_related('empresa').order_by(*ORDEN_RECIENTES))
     descargados = [t for t in turnos if t.estado == EstadoTurno.DESCARGADO]
     # Turnos que debían presentarse: los que llegaron a playa y los confirmados vencidos.
     presentados = [t for t in turnos if t.estado in (EstadoTurno.EN_PLAYA, EstadoTurno.DESCARGADO)]

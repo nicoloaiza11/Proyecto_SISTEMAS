@@ -5,6 +5,7 @@ Sistema de Optimización Logística y Turnos de Acopio Tabacalero.
 
 from pathlib import Path
 import os
+import tempfile
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -93,6 +94,16 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {
+                # Cada transacción toma el bloqueo de escritura al empezar: las
+                # reservas simultáneas se atienden de a una (sin superar la
+                # capacidad diaria) y esperan hasta 20 s en vez de fallar.
+                'transaction_mode': 'IMMEDIATE',
+                'timeout': 20,
+            },
+            # Los tests usan una base en archivo (no en memoria) para poder
+            # probar reservas simultáneas desde varios hilos.
+            'TEST': {'NAME': os.path.join(tempfile.gettempdir(), 'soltat_test.sqlite3')},
         }
     }
 

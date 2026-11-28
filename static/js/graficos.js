@@ -68,10 +68,12 @@
   });
 
   // Línea punteada de referencia (capacidad), en la misma unidad que las barras.
+  // `valor` puede ser un número (igual para todas las barras) o una lista.
   const referencia = (label, valor, largo) => ({
     type: 'line',
     label,
-    data: Array(largo).fill(valor),
+    data: Array.isArray(valor) ? valor : Array(largo).fill(valor),
+    stepped: Array.isArray(valor) ? 'middle' : false,
     borderColor: REFERENCIA,
     borderWidth: 2,
     borderDash: [6, 4],
@@ -245,7 +247,7 @@
         labels: d.etiquetas,
         datasets: [
           barra('Kilos programados', d.kilos, SERIE[0]),
-          referencia('Capacidad por hora (todas sus rampas)', d.capacidad, d.etiquetas.length),
+          referencia('Capacidad según sus rampas disponibles', d.capacidad, d.etiquetas.length),
         ],
       },
       options: {

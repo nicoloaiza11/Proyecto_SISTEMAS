@@ -24,8 +24,10 @@ class CorteTabaco(models.TextChoices):
     SUPERIOR = 'SUPERIOR', 'Superior'
 
 
-# Ventana operativa del centro de acopio de Perico: 06:00 a 22:00 hs,
-# dividida en 8 franjas de 2 horas.
+# Ventana operativa del centro de acopio de Perico: 06:00 a 22:00 hs.
+# Las 8 franjas de 2 horas ya no limitan los turnos (ahora duran según los
+# kilos, ver más abajo); se conservan para los turnos anteriores, la columna
+# Turno.franja_horaria y el formato anterior de la API.
 DURACION_FRANJA_MIN = 120
 HORA_APERTURA = 6
 HORA_CIERRE = 22
@@ -47,13 +49,6 @@ class HorarioPreferente(models.TextChoices):
 
 # Hora en la que termina la mañana y empieza la tarde.
 HORA_INICIO_TARDE = 14
-
-
-def horario_de_franja(franja) -> str:
-    """'06:00 - 08:00' -> MANANA, '14:00 - 16:00' -> TARDE."""
-    if INICIO_FRANJA[franja] >= HORA_INICIO_TARDE:
-        return HorarioPreferente.TARDE
-    return HorarioPreferente.MANANA
 
 
 # ---------------------------------------------------------------------------

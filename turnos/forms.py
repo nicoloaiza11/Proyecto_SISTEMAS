@@ -39,7 +39,7 @@ class DatosTurnoForm(forms.Form):
 
 
 class SolicitudTurnoForm(forms.Form):
-    """El productor elige empresa, kilos, corte y patente; la fecha y franja las asigna el sistema al confirmar."""
+    """El productor elige empresa, kilos, corte y patente; la fecha y el horario los asigna el sistema al confirmar."""
     empresa = forms.ModelChoiceField(
         label='Empresa compradora', queryset=None, empty_label='Seleccione la empresa',
         widget=forms.Select(attrs=SELECT),

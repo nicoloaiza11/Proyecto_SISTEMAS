@@ -6,6 +6,7 @@ from datetime import datetime, time
 from decimal import Decimal
 
 from django.db import models
+from django.db.models import F
 from django.utils import timezone
 
 from accounts.models import EmpresaAcopio, OperadorAcopio, Productor, Recorredor
@@ -46,8 +47,9 @@ class CupoProductor(models.Model):
 
 class Rampa(models.Model):
     """
-    Rampa (puerta) de descarga del centro de acopio. Cada rampa recibe un solo
-    turno por franja y la pueden usar solo las empresas habilitadas en ella.
+    Rampa (puerta) de descarga del centro de acopio. Atiende un camión a la vez
+    (sus tramos reservados están en OcupacionRampa) y la pueden usar solo las
+    empresas habilitadas en ella.
     """
     numero = models.PositiveSmallIntegerField(unique=True, verbose_name='Número')
     empresas = models.ManyToManyField(
@@ -63,6 +65,17 @@ class Rampa(models.Model):
 
     def __str__(self):
         return f'Rampa {self.numero}'
+
+
+# Orden de los turnos igual en SQLite y PostgreSQL: los valores vacíos (fecha
+# de un pendiente, hora de inicio de un turno anterior a la duración variable)
+# van primero en orden ascendente y al final en orden descendente.
+ORDEN_HORARIO = [
+    F('franja_horaria').asc(nulls_first=True),
+    F('hora_inicio').asc(nulls_first=True),
+]
+ORDEN_AGENDA = [F('fecha_entrega').asc(nulls_first=True), *ORDEN_HORARIO, 'id']
+ORDEN_RECIENTES = [F('fecha_entrega').desc(nulls_last=True), '-id']
 
 
 class Turno(models.Model):
@@ -129,7 +142,7 @@ class Turno(models.Model):
     class Meta:
         verbose_name = 'Turno'
         verbose_name_plural = 'Turnos'
-        ordering = ['fecha_entrega', 'franja_horaria', 'hora_inicio', 'id']
+        ordering = ORDEN_AGENDA
         indexes = [models.Index(fields=['empresa', 'fecha_entrega', 'estado'])]
         # La no superposición en una rampa la garantiza OcupacionRampa.
 

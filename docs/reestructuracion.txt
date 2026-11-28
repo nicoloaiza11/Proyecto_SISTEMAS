@@ -356,4 +356,17 @@ B. Puntos que se deben resolver o mejorar a futuro:
   - Generación de código QR en el turno/comprobante para escaneo rápido en garita desde dispositivos móviles.
   - Alertas meteorológicas o de fuerza mayor para reprogramación por lotes de turnos en caso de inclemencias climáticas.
   - Normalización de nombres de variables de entorno de PostgreSQL (.env vs settings.py).
+
+11. ACTUALIZACIÓN: RAMPAS Y TURNOS DE DURACIÓN VARIABLE
+------------------------------------------------------------------------------
+Las secciones anteriores que hablan de franjas de 2 horas y de capacidad por
+franja describen el sistema original. Hoy rige lo siguiente (detalle en
+docs/rampas.txt y docs/turnos_duracion.txt):
+  - 5 rampas de descarga (Massalin 1-2, Alliance One 3-5, Cooperativa 1-5),
+    con prioridad de mañana (06-14) o tarde (14-22) por empresa.
+  - Cada turno dura kilos / velocidad de descarga de la empresa, redondeado a
+    30 min, y ocupa su rampa en un bloque continuo (OcupacionRampa).
+  - La capacidad por franja ya no limita los turnos; se conserva como dato.
+  - Nivel MALO: el turno empieza después del último turno de la agenda del día.
+
 ==============================================================================

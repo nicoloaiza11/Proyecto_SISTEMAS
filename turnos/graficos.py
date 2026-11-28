@@ -99,7 +99,8 @@ def graficos_empresa(empresa, fecha, disponibilidad) -> dict:
         'empresaHoras': {
             'etiquetas': [h['valor'] for h in disponibilidad['horas']],
             'kilos': [h['ocupados'] for h in disponibilidad['horas']],
-            'capacidad': disponibilidad['horas'][0]['capacidad'] if disponibilidad['horas'] else 0,
+            # Capacidad de cada hora según las rampas que la empresa tiene disponibles.
+            'capacidad': [h['capacidad'] for h in disponibilidad['horas']],
             'fecha': f'{fecha:%d/%m/%Y}',
         },
         'empresaCortes': _kilos_por_corte(descargados),

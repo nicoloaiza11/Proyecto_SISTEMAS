@@ -1,0 +1,93 @@
+SOLTAT - TURNOS DE DURACIÓN VARIABLE
+====================================
+
+Rama: feature_turnos_duracion (incluye feature_graficos).
+
+
+1. QUÉ CAMBIA
+-------------
+
+Antes: cada turno ocupaba una franja fija de 2 horas y no podía superar la
+capacidad por franja de la empresa (30.000 a 40.000 kg). Para descargar
+100.000 kg había que pedir varios turnos.
+
+Ahora: la duración de cada turno se calcula con los kilos.
+
+    Duración = kilos / velocidad de descarga de la empresa,
+               redondeada hacia arriba a tramos de 30 minutos.
+
+Velocidades iniciales (capacidad por franja anterior / 2; se cambian en /admin):
+  - Cooperativa .......... 20.000 kg/h  -> 100.000 kg = 5 h
+  - Alliance One ......... 17.500 kg/h  -> 100.000 kg = 6 h (5 h 43 min redondeado)
+  - Massalin ............. 15.000 kg/h  -> 100.000 kg = 7 h
+
+No hay un máximo de kilos por turno: el límite es la capacidad diaria de la
+empresa y que la descarga entre entre las 06:00 y las 22:00.
+
+
+2. CÓMO SE ASIGNA EL HORARIO
+----------------------------
+
+  1) El sistema calcula la duración.
+  2) Busca el primer bloque continuo (inicios cada 30 min: 06:00, 06:30...)
+     en el que UNA rampa de la empresa esté libre durante todo el turno.
+  3) Busca primero en el horario preferente de la empresa
+     (Massalin y Alliance One a la mañana, Cooperativa a la tarde).
+  4) La prioridad se controla en CADA tramo de 30 min: para un día futuro,
+     un turno de Massalin no puede cruzar las 14:00 si la rampa es de la
+     Cooperativa a la tarde. El mismo día de la entrega, sí.
+  5) Si ese día no hay lugar, el recorredor recibe el próximo horario
+     disponible; al confirmar una solicitud se pasa solo al día siguiente.
+  6) Nivel MALO: además de la demora de 5 días, ese día el turno empieza
+     después del último turno de la agenda de la empresa (nunca antes ni al
+     mismo tiempo).
+
+
+3. RESERVAS Y CONCURRENCIA
+--------------------------
+
+  - Cada turno reserva sus tramos de 30 min en la tabla OcupacionRampa
+    (un turno de 5 h guarda 10 tramos).
+  - La base de datos no admite dos tramos iguales (rampa, fecha, hora): dos
+    reservas simultáneas nunca se superponen. La segunda recibe "Otro turno
+    acaba de reservar la Rampa N en ese horario. Intente nuevamente."
+  - Reservar es una sola operación: si falla un tramo, no queda nada guardado.
+  - SQLite: transaction_mode IMMEDIATE y timeout de 20 s (core/settings.py):
+    las reservas simultáneas se atienden de a una y no se supera la
+    capacidad diaria. Si la base sigue ocupada más de 20 s, el usuario ve
+    "El sistema está procesando otras reservas..." en vez de un error 500.
+  - PostgreSQL: cada reserva bloquea la empresa y las rampas (FOR UPDATE).
+  - Al cancelar un turno (productor, recorredor o por ausencia) se borran sus
+    tramos y la rampa queda libre.
+
+
+4. QUÉ SE VE EN LA PÁGINA
+-------------------------
+
+  - Solicitar turno: duración estimada mientras se escriben los kilos.
+  - Mis turnos, comprobante, historiales y paneles: "06:00 a 12:00 hs · 6 h".
+  - Empresa y operador: línea de tiempo de las rampas.
+  - Empresa: gráfico "Ocupación por hora" contra la capacidad de las rampas
+    que tiene realmente disponibles en cada hora (se comparten).
+  - /admin: velocidad de descarga en cada empresa. En los turnos, los campos
+    de la agenda (estado, fecha, horario, rampa, y empresa y kilos si ya tiene
+    horario) son de solo lectura: se cambian con los flujos del sistema
+    (confirmar, asignar, cancelar). Los tramos de OcupacionRampa no se pueden
+    editar ni borrar sueltos; al borrar un turno se borran sus tramos.
+
+
+5. BASE DE DATOS Y COMPATIBILIDAD
+---------------------------------
+
+  - Después de actualizar: python manage.py migrate
+  - Migraciones: accounts 0003 (velocidad), turnos 0008 (horario del turno y
+    OcupacionRampa), 0009 (tramos de los turnos activos que ya existían) y
+    0010 (orden de los turnos igual en SQLite y PostgreSQL).
+  - Los turnos existentes NO se modifican: los nuevos campos quedan vacíos y
+    se muestran con su franja de 2 h.
+  - La migración turnos 0008 no se puede revertir una vez que hay turnos de
+    duración variable.
+  - API /api/disponibilidad/: claves nuevas "horas" y "velocidad_descarga";
+    las anteriores "franjas" y "capacidad_franja" siguen, marcadas como
+    obsoletas.
+  - Script de pgAdmin actualizado: sql/pgadmin4_soltat.sql.

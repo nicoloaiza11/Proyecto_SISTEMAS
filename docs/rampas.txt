@@ -1,6 +1,12 @@
 SOLTAT - NOVEDAD EN DEV: RAMPAS DE DESCARGA
 ===========================================
 
+ACTUALIZACIÓN: desde los turnos de duración variable (docs/turnos_duracion.txt)
+cada turno ocupa su rampa durante todo su horario (bloque continuo, tramos de
+30 min) y ya no hay franjas fijas de 2 horas ni capacidad por franja. El reparto
+de rampas y las prioridades por empresa siguen igual, y ahora se controlan en
+cada tramo de 30 min del turno.
+
 Chicos, ya está en la rama dev lo de las 5 rampas (puertas) de descarga
 que acordamos. Commit: a73915f "Agregar las 5 rampas de descarga con
 prioridad por empresa".
@@ -15,8 +21,8 @@ Reparto de rampas:
   - Cooperativa ........ las 5 rampas (1 a 5)
 
 Reglas:
-  - Cada rampa recibe UN SOLO TURNO POR FRANJA (franjas de 2 horas,
-    de 06:00 a 22:00).
+  - Cada rampa atiende UN SOLO CAMIÓN A LA VEZ: el turno la ocupa durante
+    todo su horario (de 06:00 a 22:00). [Antes: un turno por franja de 2 h.]
   - Cada empresa tiene un horario preferente:
       * Massalin y Alliance One: mañana (06:00 a 14:00)
       * Cooperativa: tarde (14:00 a 22:00)
@@ -31,8 +37,8 @@ Reglas:
       jueves a la mañana. Pero si el mismo jueves la rampa 1 de las 10:00
       sigue libre, la puede usar.
   - El primero que reserva se queda con la rampa.
-  - Se sigue respetando la capacidad por franja y la capacidad diaria de
-    cada empresa (eso no cambió).
+  - Se respeta la capacidad diaria de cada empresa. [La capacidad por
+    franja ya no limita los turnos.]
 
 
 2. QUÉ SE VE EN LA PÁGINA
@@ -41,10 +47,11 @@ Reglas:
   - Comprobante: dice en qué rampa descargar ("Rampa 3").
   - Mis turnos, registros históricos, historial de la empresa, panel del
     recorredor y cancelación: muestran la rampa del turno.
-  - Panel del operador (Garita y Báscula): grilla con las 5 rampas por
-    franja del día y columna "Rampa" en la lista de turnos.
-  - Panel de la empresa: grilla de SUS rampas por franja, con colores:
-      turno propio / otra empresa / reservada para otra empresa / libre.
+  - Panel del operador (Garita y Báscula): línea de tiempo con las 5 rampas
+    del día (cada turno es un bloque del largo de su descarga) y columna
+    "Rampa" en la lista de turnos.
+  - Panel de la empresa: línea de tiempo de SUS rampas, con colores:
+      turno propio / otra empresa / reservada para otra empresa (rayado).
   - /admin: nueva sección "Rampas de descarga" para cambiar qué empresas
     usan cada rampa, y el campo "Horario preferente" en cada empresa.
 
@@ -89,8 +96,8 @@ Reglas:
     argumento). Quedó corregido: el comprobante se emite solo en la
     báscula, con peso real, precio y corte.
   - El test test_nivel_malo_si_hay_turnos_mas_de_5_dias_asigna_al_final
-    falla, pero YA FALLABA en dev antes de las rampas (espera la franja
-    08:00 y el sistema asigna la 06:00). Que lo revise quien lo escribió.
-    El resto de los tests pasa (64 de 65).
+    fallaba porque la regla "al final de la agenda" no estaba implementada.
+    Quedó resuelto con los turnos de duración variable (ver
+    docs/turnos_duracion.txt).
   - Pendiente: agregar la clase Rampa al diagrama de clases de draw.io.
   - main no se tocó: dev tiene todo lo nuevo hasta que decidamos pasarlo.

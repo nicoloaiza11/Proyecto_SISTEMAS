@@ -17,7 +17,7 @@ from . import graficos, services
 from . import weather as weather_service
 from .choices import CorteTabaco, EstadoTurno
 from .forms import AsignarTurnoForm, CancelacionForm, ConvocatoriaForm, SolicitudTurnoForm
-from .models import Turno
+from .models import ORDEN_AGENDA, ORDEN_HORARIO, ORDEN_RECIENTES, Turno
 from .whatsapp import armar_aviso
 
 ACTIVOS = [EstadoTurno.PENDIENTE, EstadoTurno.CONFIRMADO, EstadoTurno.EN_PLAYA]
@@ -91,7 +91,7 @@ def registros_historicos_view(request):
     productor = request.perfil
     base = productor.turnos.select_related('empresa', 'rampa')
     estado = request.GET.get('estado', '')
-    turnos_qs = (base.filter(estado=estado) if estado in EstadoTurno.values else base).order_by('-fecha_entrega', '-id')
+    turnos_qs = (base.filter(estado=estado) if estado in EstadoTurno.values else base).order_by(*ORDEN_RECIENTES)
     paginator = Paginator(turnos_qs, 10)
     page_obj = paginator.get_page(request.GET.get('page'))
     return render(request, 'turnos/registros_historicos.html', {
@@ -205,14 +205,14 @@ def panel_recorredor_view(request):
     empresa = recorredor.empresa_asignada
     hoy = timezone.localdate()
     turnos = Turno.objects.filter(empresa=empresa).select_related('productor', 'rampa')
-    pendientes = list(turnos.filter(estado=EstadoTurno.PENDIENTE).order_by('fecha_entrega', 'hora_inicio', 'franja_horaria'))
+    pendientes = list(turnos.filter(estado=EstadoTurno.PENDIENTE).order_by(*ORDEN_AGENDA))
     for t in pendientes:
         t.cumplimiento = services.evaluar_cumplimiento(t.productor)
     return render(request, 'turnos/recorredor_panel.html', {
         'empresa': empresa,
         'pendientes': pendientes,
         'confirmados': turnos.filter(estado=EstadoTurno.CONFIRMADO, fecha_entrega__gte=hoy)
-                             .order_by('fecha_entrega', 'hora_inicio', 'franja_horaria'),
+                             .order_by(*ORDEN_AGENDA),
         'cupos': recorredor.cupos.select_related('productor'),
     })
 
@@ -311,7 +311,7 @@ def panel_operador_view(request):
         Turno.objects.filter(fecha_entrega=fecha)
         .exclude(estado__in=[EstadoTurno.PENDIENTE, EstadoTurno.CANCELADO])
         .select_related('empresa', 'productor', 'rampa')
-        .order_by('franja_horaria', 'hora_inicio', 'rampa__numero', 'id')
+        .order_by(*ORDEN_HORARIO, 'rampa__numero', 'id')
     )
     empresa_id = request.GET.get('empresa', '')
     if empresa_id.isdigit():
@@ -389,7 +389,7 @@ def panel_empresa_view(request):
 
     turnos = (
         Turno.objects.filter(empresa=empresa, fecha_entrega=fecha)
-        .select_related('productor', 'rampa').order_by('franja_horaria', 'hora_inicio', 'rampa__numero', 'id')
+        .select_related('productor', 'rampa').order_by(*ORDEN_HORARIO, 'rampa__numero', 'id')
     )
     disponibilidad = services.consultar_disponibilidad(empresa, fecha)
     return render(request, 'turnos/empresa_panel.html', {
@@ -413,7 +413,7 @@ def historial_empresa_view(request):
     turnos = base.filter(estado=estado) if estado in EstadoTurno.values else base
     return render(request, 'turnos/empresa_historial.html', {
         'empresa': empresa,
-        'turnos': turnos.order_by('-fecha_entrega', '-id'),
+        'turnos': turnos.order_by(*ORDEN_RECIENTES),
         'total_turnos': base.count(),
         'turnos_descargados': base.filter(estado=EstadoTurno.DESCARGADO).count(),
         'turnos_activos': base.filter(estado__in=ACTIVOS).count(),

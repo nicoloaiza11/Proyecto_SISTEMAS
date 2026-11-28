@@ -31,7 +31,29 @@ class TurnoAdmin(admin.ModelAdmin):
     list_filter = ('estado', 'corte_tabaco', 'empresa', 'rampa', 'fecha_entrega')
     search_fields = ('codigo', 'productor__cuit_dni', 'productor__username', 'patente_vehiculo')
     date_hierarchy = 'fecha_entrega'
-    readonly_fields = ('codigo',)
+
+    # Campos que definen la agenda: cambiarlos a mano dejaría la reserva de la
+    # rampa (OcupacionRampa) desincronizada. Se modifican solo con los flujos
+    # del sistema (confirmar, asignar, cancelar), que actualizan la ocupación.
+    CAMPOS_AGENDA = ('estado', 'fecha_entrega', 'franja_horaria', 'hora_inicio', 'hora_fin',
+                     'duracion_min', 'rampa')
+
+    def get_readonly_fields(self, request, obj=None):
+        campos = ('codigo',) + self.CAMPOS_AGENDA
+        if obj is not None and obj.fecha_entrega:
+            # Con horario asignado, la empresa y los kilos definen la rampa y la duración reservadas.
+            campos += ('empresa', 'kilos_estimados')
+        return campos
+
+    def get_deleted_objects(self, objs, request):
+        """
+        Borrar un turno borra también sus tramos de OcupacionRampa (se libera
+        la rampa). Esos tramos no se pueden borrar sueltos, pero no deben
+        impedir borrar el turno completo.
+        """
+        borrados, conteo, permisos, protegidos = super().get_deleted_objects(objs, request)
+        permisos = {p for p in permisos if p != OcupacionRampa._meta.verbose_name}
+        return borrados, conteo, permisos, protegidos
 
 
 @admin.register(OcupacionRampa)
@@ -45,6 +67,10 @@ class OcupacionRampaAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Borrar un tramo suelto liberaría la rampa sin cancelar el turno.
         return False
 
 
