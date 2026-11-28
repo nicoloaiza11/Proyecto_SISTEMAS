@@ -157,7 +157,7 @@
             <div class="col-sm-3">
               <div class="p-3 bg-white rounded-3 shadow-sm border h-100">
                 <span class="text-muted d-block small mb-1">Precio Acordado / kg</span>
-                <strong class="fs-5 tabular-nums text-dark">$ {{ comprobante.precio|floatformat:2 }}</strong>
+                <strong class="monto-comprobante tabular-nums text-dark">$ {{ comprobante.precio|floatformat:"2g" }}</strong>
                 <span class="d-block text-muted" style="font-size: 0.72rem;">Fijado en báscula</span>
               </div>
             </div>
@@ -165,7 +165,7 @@
             <div class="col-sm-3">
               <div class="p-3 rounded-3 shadow-sm border h-100" style="background-color: var(--color-primary); color: white;">
                 <span class="d-block small text-white-50 mb-1">Importe Total Liquidado</span>
-                <strong class="fs-5 tabular-nums text-white">$ {{ comprobante.importe|floatformat:2|intcomma }}</strong>
+                <strong class="monto-comprobante tabular-nums text-white">$ {{ comprobante.importe|floatformat:"2g" }}</strong>
                 <span class="d-block text-white-50" style="font-size: 0.72rem;">Liquidación final</span>
               </div>
             </div>

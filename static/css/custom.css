@@ -1131,3 +1131,12 @@ body.hide-proto-markers .proto-only-inline {
 .leyenda.rampa-otra { background-color: #c9cfd2; }
 .leyenda.rampa-reservada { background: repeating-linear-gradient(45deg, var(--color-accent-soft), var(--color-accent-soft) 3px, #f3e4c2 3px, #f3e4c2 6px); }
 .leyenda.rampa-libre { background-color: var(--color-surface-warm); }
+
+/* Montos del comprobante en pesos: se achican para que importes grandes
+   (ej. $ 80.100.000,00) entren en su recuadro también en pantallas angostas. */
+.monto-comprobante {
+  display: block;
+  font-size: clamp(0.85rem, 1.25vw, 1.25rem);
+  font-weight: 700;
+  white-space: nowrap;
+}

@@ -32,11 +32,8 @@
             <td>{{ t.productor.get_nombre_completo }}<span class="d-block text-muted small">{{ t.productor.cuit_dni }}</span></td>
             <td><span class="badge bg-{{ t.cumplimiento.css }}-subtle text-{{ t.cumplimiento.css }} border border-{{ t.cumplimiento.css }}-subtle">{{ t.cumplimiento.nivel_display }}</span></td>
             <td>
-              {% if t.fecha_entrega %}
-                <span class="tabular-nums">{{ t.duracion_estimada_display }}</span><span class="d-block text-muted small">Fecha y horario al confirmar</span>
-              {% else %}
-                <span class="badge bg-light text-secondary border">A confirmar</span>
-              {% endif %}
+              <span class="tabular-nums fw-bold">{{ t.duracion_estimada_display }}</span>
+              <span class="d-block text-muted small">Fecha y horario al confirmar</span>
             </td>
             <td>{{ t.get_corte_tabaco_display }}</td>
             <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>

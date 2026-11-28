@@ -832,6 +832,12 @@ class DuracionTests(BaseSoltat):
         self.assertContains(r, 'velocidades-descarga')
         self.assertContains(r, 'duracion-estimada')
 
+    def test_panel_del_recorredor_muestra_la_duracion_estimada_de_las_solicitudes(self):
+        self.solicitar(kilos=90_000)  # 90.000 kg a 17.500 kg/h = 5 h 09 min -> 5 h 30 min
+        self.client.force_login(self.recorredor)
+        r = self.client.get(reverse('turnos:panel_recorredor'))
+        self.assertContains(r, '5 h 30 min')
+
     def test_mis_turnos_muestra_inicio_fin_y_duracion(self):
         self.recorredor.asignar_turno(self.productor, 100_000, CorteTabaco.MEDIANA, 'AA1', self.fecha)
         self.client.force_login(self.productor)
@@ -968,6 +974,11 @@ class IntegridadAgendaTests(BaseSoltat):
         self.assertEqual(turno.duracion_min, 360)
         self.assertEqual(turno.ocupaciones.count(), 12)  # el historial conserva la ocupación de la rampa
         self.assertEqual(turno.comprobante.peso_real, 98_500)
+        # Montos en pesos con separador de miles argentino (98.500 kg x $ 3,50).
+        self.client.force_login(self.productor)
+        r = self.client.get(reverse('turnos:comprobante', args=[turno.codigo]))
+        self.assertContains(r, '$ 344.750,00')
+        self.assertContains(r, '06:00 a 12:00 hs')
 
     def test_admin_no_permite_editar_la_agenda_del_turno(self):
         turno = self.recorredor.asignar_turno(self.productor, 35_000, CorteTabaco.MEDIANA, 'A', self.fecha)

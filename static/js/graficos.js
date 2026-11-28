@@ -42,8 +42,9 @@
     const h = Math.floor(m / 60);
     return h ? `${h} h ${m % 60} min` : `${m} min`;
   };
-  const usd = (v) => (v == null ? '—' : 'USD ' + nf.format(Math.round(v)));
-  const usdKg = (v) => (v == null ? '—' : 'USD ' + v.toLocaleString('es-AR', {
+  // Montos en pesos argentinos, como el comprobante.
+  const pesos = (v) => (v == null ? '—' : '$ ' + nf.format(Math.round(v)));
+  const pesosKg = (v) => (v == null ? '—' : '$ ' + v.toLocaleString('es-AR', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }) + '/kg');
 
@@ -145,16 +146,16 @@
       data: { labels: d.etiquetas, datasets: [barra('Liquidación', d.importes, SERIE[0])] },
       options: {
         interaction: { mode: 'index', intersect: false },
-        scales: { x: ejeX, y: ejeY(usd) },
+        scales: { x: ejeX, y: ejeY(pesos) },
         plugins: {
           legend: { display: false },
           tooltip: {
             callbacks: {
               title: (items) => d.detalle[items[0].dataIndex],
-              label: (c) => ` Liquidación: ${usd(c.parsed.y)}`,
+              label: (c) => ` Liquidación: ${pesos(c.parsed.y)}`,
               afterLabel: (c) => [
                 ` Kilos: ${kg(d.kilos[c.dataIndex])}`,
-                ` Precio: ${usdKg(d.precios[c.dataIndex])}`,
+                ` Precio: ${pesosKg(d.precios[c.dataIndex])}`,
               ],
             },
           },
@@ -181,14 +182,14 @@
         interaction: { mode: 'index', intersect: false },
         scales: {
           x: ejeX,
-          y: { ...ejeY(usdKg), beginAtZero: false, grace: '10%' },
+          y: { ...ejeY(pesosKg), beginAtZero: false, grace: '10%' },
         },
         plugins: {
           legend: { display: false },
           tooltip: {
             callbacks: {
               title: (items) => d.detalle[items[0].dataIndex],
-              label: (c) => ` Precio: ${usdKg(c.parsed.y)}`,
+              label: (c) => ` Precio: ${pesosKg(c.parsed.y)}`,
             },
           },
         },

@@ -100,14 +100,14 @@
             </td>
             <td class="text-end tabular-nums">
               {% if t.comprobante and t.comprobante.precio %}
-                $ {{ t.comprobante.precio|floatformat:2 }}
+                $ {{ t.comprobante.precio|floatformat:"2g" }}
               {% else %}
                 —
               {% endif %}
             </td>
             <td class="text-end tabular-nums">
               {% if t.comprobante and t.comprobante.importe %}
-                <strong style="color: var(--color-primary);">$ {{ t.comprobante.importe|floatformat:2|intcomma }}</strong>
+                <strong style="color: var(--color-primary);">$ {{ t.comprobante.importe|floatformat:"2g" }}</strong>
               {% else %}
                 —
               {% endif %}
