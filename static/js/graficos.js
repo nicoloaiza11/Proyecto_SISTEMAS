@@ -239,13 +239,13 @@
         },
       },
     }),
-    empresaFranjas: (d) => ({
+    empresaHoras: (d) => ({
       type: 'bar',
       data: {
-        labels: d.etiquetas.map((e) => e.slice(0, 5)),
+        labels: d.etiquetas,
         datasets: [
-          barra('Kilos ocupados', d.kilos, SERIE[0]),
-          referencia('Capacidad por franja', d.capacidad, d.etiquetas.length),
+          barra('Kilos programados', d.kilos, SERIE[0]),
+          referencia('Capacidad por hora (todas sus rampas)', d.capacidad, d.etiquetas.length),
         ],
       },
       options: {
@@ -255,7 +255,7 @@
           legend: { position: 'top', align: 'end' },
           tooltip: {
             callbacks: {
-              title: (items) => `Franja ${d.etiquetas[items[0].dataIndex]} hs`,
+              title: (items) => `De ${d.etiquetas[items[0].dataIndex]} a la hora siguiente`,
               label: (c) => ` ${c.dataset.label}: ${kg(c.parsed.y)}`,
             },
           },

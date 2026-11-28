@@ -69,8 +69,9 @@ Hay también recorredores de Alliance One (`20111111112`) y Massalin (`201111111
 ## ⚙️ Reglas principales
 
 - **Turnos:** el productor los solicita y quedan PENDIENTES hasta que el recorredor de la empresa los confirma. Los que asigna el recorredor nacen CONFIRMADOS.
-- **Franjas:** 8 franjas de 2 horas, de 06:00 a 22:00. El sistema asigna la primera franja con lugar, respetando la capacidad por franja y la capacidad diaria de la empresa.
-- **Rampas de descarga:** 5 rampas, un turno por rampa y franja. Massalin usa la 1 y la 2, Alliance One de la 3 a la 5 (prioridad de 06:00 a 14:00) y la Cooperativa las 5 (prioridad de 14:00 a 22:00). El sistema busca primero en el horario preferente de la empresa; fuera de él solo toma rampas libres el mismo día de la entrega. El reparto y el horario se cambian desde `/admin`.
+- **Duración de cada turno:** depende de los kilos. Duración = kilos ÷ velocidad de descarga de la empresa (Cooperativa 20.000, Alliance One 17.500 y Massalin 15.000 kg/h; se cambia en `/admin`), redondeada hacia arriba a tramos de 30 minutos. Ej.: 100.000 kg a 17.500 kg/h = 6 h. No hay un máximo de kilos por turno: el límite es la capacidad diaria de la empresa y el horario de 06:00 a 22:00.
+- **Asignación:** el sistema busca el primer bloque continuo (con inicios cada 30 min) en el que una rampa de la empresa esté libre durante todo el turno, empezando por el horario preferente de la empresa. Si ese día no hay lugar, sugiere u ofrece el próximo horario disponible.
+- **Rampas de descarga:** 5 rampas, un camión por rampa a la vez. Massalin usa la 1 y la 2, Alliance One de la 3 a la 5 (prioridad de 06:00 a 14:00) y la Cooperativa las 5 (prioridad de 14:00 a 22:00). La prioridad se respeta en cada tramo del turno; fuera de su horario una empresa solo toma tramos libres el mismo día de la entrega. Cada tramo reservado se guarda en `OcupacionRampa`, cuya restricción única impide superposiciones aun con reservas simultáneas.
 - **Premios y castigos** (últimos 90 días). Cuentan como incumplimiento: no presentarse, cancelar un turno confirmado y un desvío de kilos mayor al 20 %.
   - 0 incumplimientos: nivel **Bueno**, franjas desde las 06:00.
   - 1: **Regular**, desde las 12:00.

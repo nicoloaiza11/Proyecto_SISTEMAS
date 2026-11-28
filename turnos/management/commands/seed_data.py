@@ -24,7 +24,10 @@ from django.utils import timezone
 
 from accounts.models import Administrador, EmpresaAcopio, OperadorAcopio, Productor, Recorredor, Usuario
 from turnos import services
-from turnos.choices import FRANJAS_HORARIAS, CorteTabaco, EstadoTurno, HorarioPreferente
+from turnos.choices import (
+    CIERRE_MIN, FRANJAS_HORARIAS, INICIO_FRANJA, INTERVALO_MIN, CorteTabaco, EstadoTurno,
+    HorarioPreferente, a_hora,
+)
 from turnos.models import Comprobante, CupoProductor, Rampa, RegistroOperador, Turno
 
 FRANJAS = [valor for valor, _ in FRANJAS_HORARIAS]
@@ -73,7 +76,9 @@ class Command(BaseCommand):
         for empresa, horario in ((coop, HorarioPreferente.TARDE), (alliance, HorarioPreferente.MANANA),
                                  (massalin, HorarioPreferente.MANANA)):
             empresa.horario_preferente = horario
-            empresa.save(update_fields=['horario_preferente'])
+            # Velocidad de descarga: capacidad de 2 h / 2 (Coop 20.000, AOT 17.500, Massalin 15.000 kg/h).
+            empresa.velocidad_descarga_kg_hora = empresa.capacidad_franja_kg // 2
+            empresa.save(update_fields=['horario_preferente', 'velocidad_descarga_kg_hora'])
         for numero in range(1, 6):
             rampa, _ = Rampa.objects.get_or_create(numero=numero)
             rampa.empresas.set([coop, massalin] if numero <= 2 else [coop, alliance])
@@ -120,19 +125,32 @@ class Command(BaseCommand):
                   precio=None, arribo_min=None, espera_min=None):
             fecha = hoy + timedelta(days=dias)
             pendiente = estado == EstadoTurno.PENDIENTE
-            rampa = None
-            if not pendiente and estado != EstadoTurno.CANCELADO:
-                libres = services.rampas_disponibles(empresa, fecha, franja, hoy=fecha)
-                rampa = libres[0] if libres else None
             t = Turno.objects.create(
                 codigo=services.generar_codigo_turno(fecha), productor=productor, empresa=empresa,
                 recorredor=None if pendiente else recorredor,
                 kilos_estimados=kilos, patente_vehiculo=f'AE{random.randint(100, 999)}JY',
                 # Las solicitudes pendientes no tienen fecha, franja ni rampa hasta que se confirman.
-                fecha_entrega=None if pendiente else fecha, franja_horaria=None if pendiente else franja,
-                rampa=rampa, estado=estado, corte_tabaco=corte,
+                fecha_entrega=None if pendiente else fecha, estado=estado, corte_tabaco=corte,
                 fue_confirmado=not pendiente and bool(recorredor),
             )
+            if not pendiente:
+                # Horario según los kilos, desde el inicio de la franja indicada (o el
+                # primer bloque libre después). Los cancelados no reservan rampa.
+                duracion = services.duracion_turno(empresa, kilos)
+                inicio = INICIO_FRANJA[franja] * 60
+                ocupadas = services.rampas_ocupadas(fecha)
+                for comienzo in range(inicio, CIERRE_MIN - duracion + 1, INTERVALO_MIN):
+                    libre = next((r for r in services._rampas_de(empresa)
+                                  if not any(m in ocupadas.get(r.pk, {})
+                                             for m in range(comienzo, comienzo + duracion, INTERVALO_MIN))), None)
+                    if libre:
+                        if estado == EstadoTurno.CANCELADO:
+                            t.hora_inicio, t.hora_fin = a_hora(comienzo), a_hora(comienzo + duracion)
+                            t.duracion_min, t.franja_horaria = duracion, franja
+                            t.save()
+                        else:
+                            services.reservar_bloque(t, comienzo, comienzo + duracion, libre)
+                        break
             inicio = t.inicio_franja
             if estado in (EstadoTurno.EN_PLAYA, EstadoTurno.DESCARGADO):
                 t.hora_arribo_playa = inicio + timedelta(minutes=arribo_min if arribo_min is not None else random.randint(-20, 60))

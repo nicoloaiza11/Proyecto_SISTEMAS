@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Comprobante, CupoProductor, Rampa, RegistroOperador, Turno
+from .models import Comprobante, CupoProductor, OcupacionRampa, Rampa, RegistroOperador, Turno
 
 
 @admin.register(CupoProductor)
@@ -25,13 +25,27 @@ class RampaAdmin(admin.ModelAdmin):
 @admin.register(Turno)
 class TurnoAdmin(admin.ModelAdmin):
     list_display = (
-        'codigo', 'productor', 'empresa', 'fecha_entrega', 'franja_horaria', 'rampa',
+        'codigo', 'productor', 'empresa', 'fecha_entrega', 'hora_inicio', 'hora_fin', 'duracion_min', 'rampa',
         'corte_tabaco', 'kilos_estimados', 'kilos_reales', 'estado',
     )
     list_filter = ('estado', 'corte_tabaco', 'empresa', 'rampa', 'fecha_entrega')
     search_fields = ('codigo', 'productor__cuit_dni', 'productor__username', 'patente_vehiculo')
     date_hierarchy = 'fecha_entrega'
     readonly_fields = ('codigo',)
+
+
+@admin.register(OcupacionRampa)
+class OcupacionRampaAdmin(admin.ModelAdmin):
+    """Tramos de 30 min reservados (solo lectura: los maneja el sistema)."""
+    list_display = ('rampa', 'fecha', 'inicio', 'turno')
+    list_filter = ('rampa', 'fecha')
+    search_fields = ('turno__codigo',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(RegistroOperador)

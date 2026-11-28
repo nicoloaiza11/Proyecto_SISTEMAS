@@ -2,7 +2,7 @@
 Entidades de turnos según el diagrama de clases:
 CupoProductor, Rampa, Turno, RegistroOperador y Comprobante.
 """
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.db import models
@@ -15,6 +15,7 @@ from .choices import (
     INICIO_FRANJA,
     CorteTabaco,
     EstadoTurno,
+    texto_duracion,
 )
 
 
@@ -92,6 +93,11 @@ class Turno(models.Model):
     patente_vehiculo = models.CharField(max_length=20, blank=True, default='', verbose_name='Patente del vehículo')
     fecha_entrega = models.DateField(null=True, blank=True, verbose_name='Fecha de entrega')
     franja_horaria = models.CharField(max_length=20, choices=FRANJAS_HORARIAS, null=True, blank=True, verbose_name='Franja horaria')
+    # Turnos de duración variable. Los turnos anteriores no los tienen y se
+    # interpretan como la franja completa de 2 h (ver hora_inicio_efectiva).
+    hora_inicio = models.TimeField(null=True, blank=True, verbose_name='Hora de inicio')
+    hora_fin = models.TimeField(null=True, blank=True, verbose_name='Hora de fin')
+    duracion_min = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Duración (min)')
     rampa = models.ForeignKey(
         Rampa, on_delete=models.PROTECT, null=True, blank=True,
         related_name='turnos', verbose_name='Rampa de descarga',
@@ -123,16 +129,9 @@ class Turno(models.Model):
     class Meta:
         verbose_name = 'Turno'
         verbose_name_plural = 'Turnos'
-        ordering = ['fecha_entrega', 'franja_horaria', 'id']
+        ordering = ['fecha_entrega', 'franja_horaria', 'hora_inicio', 'id']
         indexes = [models.Index(fields=['empresa', 'fecha_entrega', 'estado'])]
-        constraints = [
-            # Un solo turno activo por rampa y franja.
-            models.UniqueConstraint(
-                fields=['rampa', 'fecha_entrega', 'franja_horaria'],
-                condition=models.Q(rampa__isnull=False) & ~models.Q(estado=EstadoTurno.CANCELADO),
-                name='turno_unico_por_rampa_y_franja',
-            ),
-        ]
+        # La no superposición en una rampa la garantiza OcupacionRampa.
 
     def __str__(self):
         fecha = self.fecha_entrega.strftime('%d/%m/%Y') if self.fecha_entrega else 'Pendiente de asignación'
@@ -188,16 +187,60 @@ class Turno(models.Model):
         return None
 
     @property
-    def inicio_franja(self):
+    def hora_inicio_efectiva(self):
+        """Hora de inicio del turno (o de su franja, en turnos anteriores a la duración variable)."""
+        if self.hora_inicio:
+            return self.hora_inicio
         hora = INICIO_FRANJA.get(self.franja_horaria)
-        if hora is None or self.fecha_entrega is None:
+        return time(hora, 0) if hora is not None else None
+
+    @property
+    def hora_fin_efectiva(self):
+        if self.hora_fin:
+            return self.hora_fin
+        hora = INICIO_FRANJA.get(self.franja_horaria)
+        return time(hora + DURACION_FRANJA_MIN // 60, 0) if hora is not None else None
+
+    @property
+    def duracion_efectiva(self):
+        """Duración en minutos."""
+        if self.duracion_min:
+            return self.duracion_min
+        return DURACION_FRANJA_MIN if self.franja_horaria else None
+
+    @property
+    def horario_display(self):
+        """'08:00 a 13:45' (o '' si todavía no tiene horario)."""
+        inicio, fin = self.hora_inicio_efectiva, self.hora_fin_efectiva
+        if not inicio or not fin:
+            return ''
+        return f'{inicio:%H:%M} a {fin:%H:%M}'
+
+    @property
+    def duracion_display(self):
+        return texto_duracion(self.duracion_efectiva)
+
+    @property
+    def duracion_estimada_display(self):
+        """Duración que tendrá el turno según los kilos y la velocidad de la empresa."""
+        from .services import duracion_turno
+        return texto_duracion(duracion_turno(self.empresa, self.kilos_estimados))
+
+    @property
+    def inicio_franja(self):
+        """Fecha y hora de inicio del turno."""
+        inicio = self.hora_inicio_efectiva
+        if inicio is None or self.fecha_entrega is None:
             return None
-        return timezone.make_aware(datetime.combine(self.fecha_entrega, time(hora, 0)))
+        return timezone.make_aware(datetime.combine(self.fecha_entrega, inicio))
 
     @property
     def fin_franja(self):
-        inicio = self.inicio_franja
-        return inicio + timedelta(minutes=DURACION_FRANJA_MIN) if inicio else None
+        """Fecha y hora de fin del turno."""
+        fin = self.hora_fin_efectiva
+        if fin is None or self.fecha_entrega is None:
+            return None
+        return timezone.make_aware(datetime.combine(self.fecha_entrega, fin))
 
     @property
     def kilos_efectivos(self):
@@ -223,6 +266,31 @@ class Turno(models.Model):
             EstadoTurno.EN_PLAYA: 'badge-en-playa',
             EstadoTurno.DESCARGADO: 'badge-descargado',
         }.get(self.estado, 'badge-cancelado')
+
+
+class OcupacionRampa(models.Model):
+    """
+    Tramo de 30 minutos de una rampa reservado por un turno. Un turno de
+    5 h 30 min crea 11 tramos. La restricción única (rampa, fecha, inicio)
+    impide en la base de datos que dos turnos se superpongan en una rampa,
+    aun si dos reservas se procesan al mismo tiempo. Al cancelar el turno
+    se borran sus tramos y la rampa queda libre.
+    """
+    turno = models.ForeignKey(Turno, on_delete=models.CASCADE, related_name='ocupaciones')
+    rampa = models.ForeignKey(Rampa, on_delete=models.CASCADE, related_name='ocupaciones')
+    fecha = models.DateField()
+    inicio = models.TimeField(verbose_name='Inicio del tramo')
+
+    class Meta:
+        verbose_name = 'Ocupación de rampa'
+        verbose_name_plural = 'Ocupaciones de rampas'
+        ordering = ['fecha', 'rampa', 'inicio']
+        constraints = [
+            models.UniqueConstraint(fields=['rampa', 'fecha', 'inicio'], name='rampa_sin_superposicion'),
+        ]
+
+    def __str__(self):
+        return f'{self.rampa} · {self.fecha:%d/%m/%Y} {self.inicio:%H:%M} · {self.turno.codigo}'
 
 
 class RegistroOperador(models.Model):

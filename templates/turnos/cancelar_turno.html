@@ -11,7 +11,7 @@
   <div class="card-soltat p-4 shadow-sm">
     <dl class="row small mb-3">
       <dt class="col-5">Empresa</dt><dd class="col-7">{{ turno.empresa.nombre }}</dd>
-      <dt class="col-5">Fecha y franja</dt><dd class="col-7">{{ turno.fecha_entrega|date:"d/m/Y" }} · {{ turno.franja_horaria }} hs{% if turno.rampa %} · {{ turno.rampa }}{% endif %}</dd>
+      <dt class="col-5">Fecha y horario</dt><dd class="col-7">{{ turno.fecha_entrega|date:"d/m/Y" }} · {{ turno.horario_display }} hs ({{ turno.duracion_display }}){% if turno.rampa %} · {{ turno.rampa }}{% endif %}</dd>
       <dt class="col-5">Kilos</dt><dd class="col-7">{{ turno.kilos_estimados|intcomma }} kg · {{ turno.get_corte_tabaco_display }}</dd>
       <dt class="col-5">Estado</dt><dd class="col-7"><span class="badge-soltat {{ turno.badge_class }}">{{ turno.get_estado_display }}</span></dd>
     </dl>

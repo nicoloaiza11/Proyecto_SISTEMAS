@@ -96,10 +96,10 @@ def graficos_empresa(empresa, fecha, disponibilidad) -> dict:
             'kilos': [por_dia.get(d, 0) for d in dias],
             'capacidad': empresa.capacidad_diaria_kg,
         },
-        'empresaFranjas': {
-            'etiquetas': [f['valor'] for f in disponibilidad['franjas']],
-            'kilos': [f['ocupados'] for f in disponibilidad['franjas']],
-            'capacidad': empresa.capacidad_franja_kg,
+        'empresaHoras': {
+            'etiquetas': [h['valor'] for h in disponibilidad['horas']],
+            'kilos': [h['ocupados'] for h in disponibilidad['horas']],
+            'capacidad': disponibilidad['horas'][0]['capacidad'] if disponibilidad['horas'] else 0,
             'fecha': f'{fecha:%d/%m/%Y}',
         },
         'empresaCortes': _kilos_por_corte(descargados),

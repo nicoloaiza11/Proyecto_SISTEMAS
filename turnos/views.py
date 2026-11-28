@@ -125,12 +125,13 @@ def solicitar_turno_view(request):
             messages.success(
                 request,
                 f'Solicitud de turno {turno.codigo} enviada con éxito. '
-                f'La fecha y franja horaria serán asignadas automáticamente por el sistema cuando la empresa confirme la solicitud.'
+                f'La fecha y el horario (estimado en {turno.duracion_estimada_display}) serán asignados automáticamente por el sistema cuando la empresa confirme la solicitud.'
             )
             return redirect('turnos:comprobante', codigo=turno.codigo)
 
     return render(request, 'turnos/solicitar_turno.html', {
         'form': form,
+        'velocidades': {str(e.pk): e.velocidad_descarga_kg_hora for e in empresas},
         'cumplimiento': cumplimiento,
         'cupos': services.resumen_cupos(productor),
         'sin_empresas': not empresas.exists(),
@@ -204,14 +205,14 @@ def panel_recorredor_view(request):
     empresa = recorredor.empresa_asignada
     hoy = timezone.localdate()
     turnos = Turno.objects.filter(empresa=empresa).select_related('productor', 'rampa')
-    pendientes = list(turnos.filter(estado=EstadoTurno.PENDIENTE).order_by('fecha_entrega', 'franja_horaria'))
+    pendientes = list(turnos.filter(estado=EstadoTurno.PENDIENTE).order_by('fecha_entrega', 'hora_inicio', 'franja_horaria'))
     for t in pendientes:
         t.cumplimiento = services.evaluar_cumplimiento(t.productor)
     return render(request, 'turnos/recorredor_panel.html', {
         'empresa': empresa,
         'pendientes': pendientes,
         'confirmados': turnos.filter(estado=EstadoTurno.CONFIRMADO, fecha_entrega__gte=hoy)
-                             .order_by('fecha_entrega', 'franja_horaria'),
+                             .order_by('fecha_entrega', 'hora_inicio', 'franja_horaria'),
         'cupos': recorredor.cupos.select_related('productor'),
     })
 
@@ -240,12 +241,12 @@ def asignar_turno_view(request):
             messages.success(
                 request,
                 f'Turno {turno.codigo} asignado y confirmado: {turno.fecha_entrega:%d/%m/%Y}, '
-                f'franja {turno.franja_horaria} hs, {turno.rampa}.'
+                f'{turno.horario_display} hs ({turno.duracion_display}), {turno.rampa}.'
             )
             aviso = armar_aviso(
                 turno.productor,
                 f'SOLTAT · {empresa.nombre} le asignó el turno {turno.codigo} para el '
-                f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs, {turno.rampa} '
+                f'{turno.fecha_entrega:%d/%m/%Y} de {turno.horario_display} hs, {turno.rampa} '
                 f'({services.kg(turno.kilos_estimados)}, corte {turno.get_corte_tabaco_display()}).'
             )
             return _mostrar_avisos(request, [aviso], 'Avisar al productor del turno asignado',
@@ -273,12 +274,12 @@ def confirmar_turno_view(request, turno_id):
     messages.success(
         request,
         f'Turno {turno.codigo} confirmado y asignado por sistema para el '
-        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs, {turno.rampa}.'
+        f'{turno.fecha_entrega:%d/%m/%Y} de {turno.horario_display} hs ({turno.duracion_display}), {turno.rampa}.'
     )
     aviso = armar_aviso(
         turno.productor,
         f'SOLTAT · {turno.empresa.nombre} confirmó su turno {turno.codigo} del '
-        f'{turno.fecha_entrega:%d/%m/%Y}, franja {turno.franja_horaria} hs, {turno.rampa}.'
+        f'{turno.fecha_entrega:%d/%m/%Y} de {turno.horario_display} hs, {turno.rampa}.'
     )
     return _mostrar_avisos(request, [aviso], 'Avisar al productor de la confirmación',
                            reverse('turnos:panel_recorredor'))
@@ -310,7 +311,7 @@ def panel_operador_view(request):
         Turno.objects.filter(fecha_entrega=fecha)
         .exclude(estado__in=[EstadoTurno.PENDIENTE, EstadoTurno.CANCELADO])
         .select_related('empresa', 'productor', 'rampa')
-        .order_by('franja_horaria', 'rampa__numero', 'id')
+        .order_by('franja_horaria', 'hora_inicio', 'rampa__numero', 'id')
     )
     empresa_id = request.GET.get('empresa', '')
     if empresa_id.isdigit():
@@ -388,7 +389,7 @@ def panel_empresa_view(request):
 
     turnos = (
         Turno.objects.filter(empresa=empresa, fecha_entrega=fecha)
-        .select_related('productor', 'rampa').order_by('franja_horaria', 'rampa__numero', 'id')
+        .select_related('productor', 'rampa').order_by('franja_horaria', 'hora_inicio', 'rampa__numero', 'id')
     )
     disponibilidad = services.consultar_disponibilidad(empresa, fecha)
     return render(request, 'turnos/empresa_panel.html', {

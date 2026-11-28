@@ -54,3 +54,48 @@ def horario_de_franja(franja) -> str:
     if INICIO_FRANJA[franja] >= HORA_INICIO_TARDE:
         return HorarioPreferente.TARDE
     return HorarioPreferente.MANANA
+
+
+# ---------------------------------------------------------------------------
+# Turnos de duración variable
+# ---------------------------------------------------------------------------
+# La duración de un turno depende de los kilos y de la velocidad de descarga
+# de la empresa. Duración y horarios de inicio se redondean a tramos de 30 min.
+INTERVALO_MIN = 30
+APERTURA_MIN = HORA_APERTURA * 60   # 06:00 -> 360
+CIERRE_MIN = HORA_CIERRE * 60       # 22:00 -> 1320
+INICIO_TARDE_MIN = HORA_INICIO_TARDE * 60
+
+
+def a_minutos(hora) -> int:
+    """time(8, 30) -> 510"""
+    return hora.hour * 60 + hora.minute
+
+
+def a_hora(minutos):
+    """510 -> time(8, 30)"""
+    from datetime import time
+    return time(minutos // 60, minutos % 60)
+
+
+def horario_de_minuto(minuto) -> str:
+    """Parte del día (mañana o tarde) de un tramo que empieza en `minuto`."""
+    return HorarioPreferente.TARDE if minuto >= INICIO_TARDE_MIN else HorarioPreferente.MANANA
+
+
+def franja_de_minuto(minuto):
+    """Franja de 2 h que contiene el minuto (se guarda en Turno.franja_horaria por compatibilidad)."""
+    for valor, _ in FRANJAS_HORARIAS:
+        if INICIO_FRANJA[valor] * 60 <= minuto < INICIO_FRANJA[valor] * 60 + DURACION_FRANJA_MIN:
+            return valor
+    return None
+
+
+def texto_duracion(minutos) -> str:
+    """345 -> '5 h 45 min', 120 -> '2 h', 30 -> '30 min'"""
+    if minutos is None:
+        return ''
+    horas, resto = divmod(int(minutos), 60)
+    if horas and resto:
+        return f'{horas} h {resto} min'
+    return f'{horas} h' if horas else f'{resto} min'

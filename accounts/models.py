@@ -227,12 +227,21 @@ class EmpresaAcopio(Usuario):
         help_text='Entre 200.000 y 300.000 kg por día.',
     )
     # Excepción al diagrama acordada: capacidad configurable de cada franja de 2 h.
+    # Desde los turnos de duración variable ya no limita los turnos: se conserva
+    # como dato de referencia (la velocidad inicial se calculó a partir de ella).
     capacidad_franja_kg = models.PositiveIntegerField(
         default=40_000,
         validators=[MinValueValidator(1)],
         verbose_name='Capacidad por franja (kg)',
-        help_text='Kilos que se pueden recibir en cada franja de 2 horas. '
-                  'Nunca se supera la capacidad diaria.',
+        help_text='Dato de referencia (kilos en 2 horas). Ya no limita los turnos: '
+                  'la duración se calcula con la velocidad de descarga.',
+    )
+    velocidad_descarga_kg_hora = models.PositiveIntegerField(
+        default=17_500,
+        validators=[MinValueValidator(1_000)],
+        verbose_name='Velocidad de descarga (kg/h)',
+        help_text='Kilos que se descargan por hora en una rampa. La duración de cada turno '
+                  'es kilos ÷ velocidad, redondeada hacia arriba a tramos de 30 minutos.',
     )
     activa = models.BooleanField(default=True, verbose_name='¿Activa para recepción?')
     corte_solicitado = models.CharField(

@@ -1,0 +1,36 @@
+{% comment %}
+Línea de tiempo de las rampas (06:00 a 22:00). Cada turno es un bloque del
+largo real de su descarga. Parámetros:
+  rampas: dict de services.ocupacion_rampas / ocupacion_rampas_centro
+  modo:   'empresa' (colores propio/otra y zonas reservadas) o 'centro'
+{% endcomment %}
+<div class="linea-tiempo">
+  <div class="lt-fila lt-encabezado">
+    <div class="lt-rotulo"></div>
+    <div class="lt-pista">
+      {% for m in rampas.marcas %}<span class="lt-marca" style="left: {{ m.izq|stringformat:'f' }}%;">{{ m.hora }}</span>{% endfor %}
+    </div>
+  </div>
+  {% for fila in rampas.filas %}
+  <div class="lt-fila">
+    <div class="lt-rotulo">Rampa {{ fila.rampa.numero }}</div>
+    <div class="lt-pista">
+      {% if modo == 'empresa' %}
+        <span class="lt-preferente" style="left: {{ rampas.preferente.izq|stringformat:'f' }}%; width: {{ rampas.preferente.ancho|stringformat:'f' }}%;"></span>
+        {% for r in fila.reservas %}<span class="lt-reserva" style="left: {{ r.izq|stringformat:'f' }}%; width: {{ r.ancho|stringformat:'f' }}%;" title="Reservada para otra empresa"></span>{% endfor %}
+      {% endif %}
+      {% for m in rampas.marcas %}<span class="lt-guia" style="left: {{ m.izq|stringformat:'f' }}%;"></span>{% endfor %}
+      {% for b in fila.bloques %}
+        {% with t=b.turno %}
+        <a href="{% url 'turnos:comprobante' t.codigo %}"
+           class="lt-bloque {% if modo == 'empresa' %}lt-{{ b.estado }}{% else %}lt-propia{% endif %}"
+           style="left: {{ b.izq|stringformat:'f' }}%; width: {{ b.ancho|stringformat:'f' }}%;"
+           title="{{ t.codigo }} · {{ t.empresa.nombre }} · {{ t.horario_display }} hs ({{ t.duracion_display }}) · {{ t.kilos_estimados }} kg">
+          {% if modo == 'empresa' and b.estado == 'otra' %}{{ t.empresa.nombre|truncatechars:16 }}{% else %}{{ t.horario_display }}{% if modo != 'empresa' %} · {{ t.empresa.nombre|truncatechars:14 }}{% endif %}{% endif %}
+        </a>
+        {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>

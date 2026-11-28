@@ -11,7 +11,7 @@
       <span class="section-eyebrow"><i class="bi bi-building me-1"></i> {{ empresa.nombre }}</span>
       <h1 class="h2 mb-1">Ocupación y Convocatorias</h1>
       <p class="text-muted small mb-0">
-        Capacidad diaria {{ empresa.capacidad_diaria_kg|intcomma }} kg · {{ empresa.capacidad_franja_kg|intcomma }} kg por franja.
+        Capacidad diaria {{ empresa.capacidad_diaria_kg|intcomma }} kg · descarga {{ empresa.velocidad_descarga_kg_hora|intcomma }} kg por hora en cada rampa.
         {% if pendientes %}<strong>{{ pendientes }} solicitud{{ pendientes|pluralize:"es" }} pendiente{{ pendientes|pluralize }}</strong> de confirmar por sus recorredores.{% endif %}
       </p>
     </div>
@@ -45,9 +45,9 @@
           <div class="progress-bar" style="width: {{ disponibilidad.porcentaje_ocupacion|stringformat:'f' }}%; background-color: var(--color-primary);"></div>
         </div>
 
-        <h2 class="h6 fw-bold mb-1">Ocupación por franja</h2>
-        <p class="small text-muted mb-3">Kilos agendados en cada franja del {{ fecha|date:"d/m/Y" }}, contra la capacidad por franja.</p>
-        <div class="grafico-caja" style="height: 240px;"><canvas data-grafico="empresaFranjas" role="img" aria-label="Gráfico de barras de kilos ocupados por franja horaria"></canvas></div>
+        <h2 class="h6 fw-bold mb-1">Ocupación por hora</h2>
+        <p class="small text-muted mb-3">Kilos programados en cada hora del {{ fecha|date:"d/m/Y" }}, según la duración de cada turno, contra lo que pueden descargar todas sus rampas juntas.</p>
+        <div class="grafico-caja" style="height: 240px;"><canvas data-grafico="empresaHoras" role="img" aria-label="Gráfico de barras de kilos programados por hora"></canvas></div>
       </div>
 
       <div class="card-soltat p-4 shadow-sm mb-4">
@@ -71,31 +71,13 @@
           {% if rampas.liberada %}Hoy puede usar cualquiera de sus rampas que esté libre.{% else %}Fuera de ese horario, las rampas de otras empresas se liberan el mismo día de la entrega.{% endif %}
         </p>
         {% if rampas.rampas %}
-        <div class="table-responsive">
-          <table class="table table-sm table-rampas align-middle mb-2">
-            <thead><tr><th>Franja</th>{% for r in rampas.rampas %}<th class="text-center">Rampa {{ r.numero }}</th>{% endfor %}</tr></thead>
-            <tbody>
-              {% for fila in rampas.filas %}
-              <tr>
-                <td class="tabular-nums small text-nowrap {% if fila.preferente %}fw-bold{% endif %}">{{ fila.valor }}{% if fila.preferente %} <i class="bi bi-star-fill text-warning" title="Horario preferente"></i>{% endif %}</td>
-                {% for c in fila.celdas %}
-                  <td class="rampa-{{ c.estado }} text-center small">
-                    {% if c.estado == 'propia' %}<a href="{% url 'turnos:comprobante' c.turno.codigo %}" class="text-decoration-none">{{ c.turno.codigo|slice:"-4:" }}</a>
-                    {% elif c.estado == 'otra' %}{{ c.turno.empresa.nombre|truncatechars:14 }}
-                    {% elif c.estado == 'reservada' %}Reservada
-                    {% else %}Libre{% endif %}
-                  </td>
-                {% endfor %}
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        {% include 'turnos/_linea_tiempo_rampas.html' with rampas=rampas modo='empresa' %}
         <div class="d-flex flex-wrap gap-3 small text-muted">
           <span><span class="leyenda rampa-propia"></span> Turno propio</span>
           <span><span class="leyenda rampa-otra"></span> Otra empresa</span>
           <span><span class="leyenda rampa-reservada"></span> Reservada para otra empresa</span>
           <span><span class="leyenda rampa-libre"></span> Libre</span>
+          <span><span class="leyenda lt-leyenda-preferente"></span> Su horario preferente</span>
         </div>
         {% else %}
         <p class="small text-danger mb-0">No tiene rampas habilitadas. Pida al administrador que se las asigne.</p>
@@ -105,11 +87,11 @@
       <div class="card-soltat p-0 overflow-hidden shadow-sm">
         <div class="table-responsive">
           <table class="table table-soltat align-middle mb-0">
-            <thead><tr><th>Franja</th><th>Rampa</th><th>Código</th><th>Productor</th><th>Corte</th><th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-center">Estado</th><th class="text-end">Comprobante</th></tr></thead>
+            <thead><tr><th>Horario</th><th>Rampa</th><th>Código</th><th>Productor</th><th>Corte</th><th class="text-end">Estimados</th><th class="text-end">Reales</th><th class="text-center">Estado</th><th class="text-end">Comprobante</th></tr></thead>
             <tbody>
               {% for t in turnos %}
               <tr>
-                <td class="tabular-nums">{{ t.franja_horaria }}</td>
+                <td class="tabular-nums text-nowrap">{{ t.horario_display|default:"—" }}<span class="d-block text-muted small">{{ t.duracion_display }}</span></td>
                 <td>{% if t.rampa %}<span class="badge-rampa">{{ t.rampa.numero }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
                 <td>{{ t.productor.get_nombre_completo }}</td>

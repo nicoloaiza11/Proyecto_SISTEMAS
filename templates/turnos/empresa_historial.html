@@ -52,7 +52,7 @@
           <tr>
             <th>Código</th>
             <th>Productor</th>
-            <th>Fecha y franja</th>
+            <th>Fecha y horario</th>
             <th>Corte recibido</th>
             <th class="text-end">Kilos estimados</th>
             <th class="text-end">Kilos reales</th>
@@ -77,7 +77,7 @@
             <td>
               {% if t.fecha_entrega %}
                 <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span>
-                <span class="text-muted small d-block">{{ t.franja_horaria }} hs{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</span>
+                <span class="text-muted small d-block">{{ t.horario_display }} hs{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</span>
               {% else %}
                 <span class="badge bg-light text-secondary border">A confirmar</span>
               {% endif %}

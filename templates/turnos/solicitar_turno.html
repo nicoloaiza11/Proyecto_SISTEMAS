@@ -11,7 +11,7 @@
     <h1 class="h2 mb-1">Solicitar Turno</h1>
     <p class="text-muted small mb-0">
       Indique la empresa, los kilos estimados, el corte y el dominio de su vehículo.
-      La fecha y franja horaria serán asignadas y notificadas automáticamente por el sistema al momento en que la empresa confirme su solicitud.
+      La duración del turno se calcula con los kilos que declare. La fecha y el horario serán asignados y notificados automáticamente por el sistema cuando la empresa confirme su solicitud.
     </p>
   </div>
 
@@ -40,9 +40,11 @@
               <div class="col-md-12 mb-3">{% include 'turnos/_field.html' with field=form.patente_vehiculo %}</div>
             </div>
 
+            <div id="duracion-estimada" class="alert alert-light border py-2 px-3 small mb-3 d-none" aria-live="polite"></div>
+
             <div class="alert alert-info py-2 px-3 small mb-3">
               <i class="bi bi-info-circle me-1"></i>
-              <strong>Asignación automática:</strong> Una vez enviada la solicitud, el recorredor de la empresa la revisará y el sistema le otorgará el día y franja horaria más próximos disponibles según su nivel de cumplimiento.
+              <strong>Asignación automática:</strong> Una vez enviada la solicitud, el recorredor de la empresa la revisará y el sistema le otorgará el día y el horario continuo más próximos disponibles según su nivel de cumplimiento.
             </div>
 
             <button type="submit" class="btn btn-primary-soltat btn-lg px-4">
@@ -59,4 +61,37 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ velocidades|json_script:"velocidades-descarga" }}
+<script>
+  // Duración estimada: kilos ÷ velocidad de la empresa, redondeada hacia arriba a 30 min.
+  (function () {
+    const fuente = document.getElementById('velocidades-descarga');
+    const empresa = document.getElementById('{{ form.empresa.id_for_label }}');
+    const kilos = document.getElementById('{{ form.kilos_estimados.id_for_label }}');
+    const caja = document.getElementById('duracion-estimada');
+    if (!fuente || !empresa || !kilos || !caja) return;
+    const velocidades = JSON.parse(fuente.textContent);
+    const nf = new Intl.NumberFormat('es-AR');
+    const texto = (min) => {
+      const h = Math.floor(min / 60), m = min % 60;
+      return h && m ? `${h} h ${m} min` : (h ? `${h} h` : `${m} min`);
+    };
+    function actualizar() {
+      const velocidad = velocidades[empresa.value];
+      const kg = parseInt(kilos.value, 10);
+      if (!velocidad || !kg || kg < 50) { caja.classList.add('d-none'); return; }
+      const minutos = Math.max(30, Math.ceil(Math.ceil(kg * 60 / velocidad) / 30) * 30);
+      caja.innerHTML = `<i class="bi bi-hourglass-split me-1"></i> <strong>${nf.format(kg)} kg</strong> · ` +
+        `duración estimada de la descarga: <strong>${texto(minutos)}</strong> ` +
+        `<span class="text-muted">(${nf.format(velocidad)} kg por hora)</span>`;
+      caja.classList.remove('d-none');
+    }
+    empresa.addEventListener('change', actualizar);
+    kilos.addEventListener('input', actualizar);
+    actualizar();
+  })();
+</script>
 {% endblock %}

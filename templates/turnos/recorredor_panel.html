@@ -21,7 +21,7 @@
       <table class="table table-soltat align-middle mb-0">
         <thead>
           <tr>
-            <th>Código</th><th>Productor</th><th>Cumplimiento</th><th>Fecha y franja</th><th>Corte</th>
+            <th>Código</th><th>Productor</th><th>Cumplimiento</th><th>Duración estimada</th><th>Corte</th>
             <th class="text-end">Kilos</th><th>Patente</th><th class="text-end">Acciones</th>
           </tr>
         </thead>
@@ -33,7 +33,7 @@
             <td><span class="badge bg-{{ t.cumplimiento.css }}-subtle text-{{ t.cumplimiento.css }} border border-{{ t.cumplimiento.css }}-subtle">{{ t.cumplimiento.nivel_display }}</span></td>
             <td>
               {% if t.fecha_entrega %}
-                <span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span><span class="d-block text-muted small">{{ t.franja_horaria }} hs</span>
+                <span class="tabular-nums">{{ t.duracion_estimada_display }}</span><span class="d-block text-muted small">Fecha y horario al confirmar</span>
               {% else %}
                 <span class="badge bg-light text-secondary border">A confirmar</span>
               {% endif %}
@@ -74,13 +74,13 @@
       <div class="card-soltat p-0 overflow-hidden shadow-sm">
         <div class="table-responsive">
           <table class="table table-soltat align-middle mb-0">
-            <thead><tr><th>Código</th><th>Productor</th><th>Fecha y franja</th><th>Corte</th><th class="text-end">Kilos</th><th class="text-end">Acciones</th></tr></thead>
+            <thead><tr><th>Código</th><th>Productor</th><th>Fecha y horario</th><th>Corte</th><th class="text-end">Kilos</th><th class="text-end">Acciones</th></tr></thead>
             <tbody>
               {% for t in confirmados %}
               <tr>
                 <td><a href="{% url 'turnos:comprobante' t.codigo %}" class="font-monospace text-decoration-none" style="color: var(--color-primary);">{{ t.codigo }}</a></td>
                 <td>{{ t.productor.get_nombre_completo }}</td>
-                <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.franja_horaria }}</span>{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</td>
+                <td><span class="tabular-nums">{{ t.fecha_entrega|date:"d/m/Y" }}</span> <span class="text-muted small">· {{ t.horario_display }} hs ({{ t.duracion_display }})</span>{% if t.rampa %} <span class="badge-rampa">{{ t.rampa }}</span>{% endif %}</td>
                 <td>{{ t.get_corte_tabaco_display }}</td>
                 <td class="text-end tabular-nums">{{ t.kilos_estimados|intcomma }} kg</td>
                 <td class="text-end">

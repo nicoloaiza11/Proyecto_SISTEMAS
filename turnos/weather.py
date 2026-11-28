@@ -21,7 +21,7 @@ import json
 
 from django.utils import timezone
 
-from .choices import INICIO_FRANJA, EstadoTurno
+from .choices import EstadoTurno
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +97,9 @@ def _build_url(fecha_str: str) -> str:
 
 
 def _extraer_hora(turno) -> int | None:
-    """Devuelve la hora de inicio de la franja del turno (entero, ej. 8)."""
-    if not turno.franja_horaria:
-        return None
-    return INICIO_FRANJA.get(turno.franja_horaria)
+    """Devuelve la hora de inicio del turno (entero, ej. 8)."""
+    inicio = turno.hora_inicio_efectiva
+    return inicio.hour if inicio else None
 
 
 def _fetch_pronostico(fecha_str: str, hora: int) -> dict | None:

@@ -105,14 +105,14 @@ class SolicitudYAsignacionTests(BaseSoltat):
         self.assertTrue(turno.fue_confirmado)
         self.assertFalse(Comprobante.objects.filter(turno=turno).exists())
 
-    def test_asigna_la_siguiente_franja_cuando_la_primera_se_llena(self):
+    def test_con_las_rampas_ocupadas_asigna_el_horario_siguiente(self):
+        # 5 rampas: los primeros cinco turnos de 2 h arrancan a las 06:00 y el sexto a las 08:00.
         CupoProductor.objects.create(productor=self.productor, recorredor=self.recorredor, cupo_maximo=100_000)
-        primero = self.recorredor.asignar_turno(self.productor, 25_000, CorteTabaco.MEDIANA, 'AA1', self.manana)
-        segundo = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, 'AA2', self.manana)
-        tercero = self.recorredor.asignar_turno(self.productor, 5_000, CorteTabaco.MEDIANA, 'AA3', self.manana)
-        self.assertEqual(primero.franja_horaria, '06:00 - 08:00')
-        self.assertEqual(segundo.franja_horaria, '08:00 - 10:00')
-        self.assertEqual(tercero.franja_horaria, '06:00 - 08:00')  # entra en el lugar libre
+        turnos = [self.recorredor.asignar_turno(self.productor, 30_000, CorteTabaco.MEDIANA, f'AA{i}', self.manana)
+                  for i in range(6)]
+        self.assertEqual([t.hora_inicio for t in turnos[:5]], [time(6, 0)] * 5)
+        self.assertEqual(len({t.rampa_id for t in turnos[:5]}), 5)
+        self.assertEqual(turnos[5].hora_inicio, time(8, 0))
 
     def test_respeta_la_capacidad_diaria(self):
         self.empresa.capacidad_diaria_kg = 200_000
@@ -138,9 +138,9 @@ class SolicitudYAsignacionTests(BaseSoltat):
         with self.assertRaises(services.SinCupoProductorError):
             self.solicitar()
 
-    def test_turno_mayor_a_una_franja_se_rechaza(self):
+    def test_turno_que_supera_la_capacidad_diaria_se_rechaza(self):
         with self.assertRaises(services.TurnoError):
-            self.solicitar(kilos=31_000)
+            self.solicitar(kilos=200_001)
 
     def test_solicitud_menor_a_50_kg_se_rechaza_y_50_kg_se_acepta(self):
         with self.assertRaises(services.TurnoError):
@@ -162,8 +162,8 @@ class SolicitudYAsignacionTests(BaseSoltat):
 
     def test_hoy_saltea_franjas_que_ya_empezaron(self):
         ahora = timezone.make_aware(datetime.combine(self.hoy, time(13, 30)))
-        franja = services.buscar_franja(self.empresa, self.hoy, 1_000, ahora=ahora)
-        self.assertEqual(franja, '14:00 - 16:00')
+        inicio, fin, rampa = services.buscar_bloque(self.empresa, self.hoy, 1_000, ahora=ahora)
+        self.assertEqual(inicio, 14 * 60)  # el primer tramo que todavía no empezó
 
 
 class CumplimientoTests(BaseSoltat):
@@ -311,7 +311,11 @@ class OperacionEnPlantaTests(BaseSoltat):
         self.assertEqual(self.empresa.calcular_kilos_ocupados(self.hoy), 8_000)
 
     def test_asignar_sin_patente_y_registrar_patente_en_garita(self):
-        turno = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, '', self.hoy)
+        # Se asigna para mañana y se pasa a hoy, para que el test no dependa de la hora
+        # (después de las 21:30 ya no quedan horarios para hoy).
+        turno = self.recorredor.asignar_turno(self.productor, 10_000, CorteTabaco.MEDIANA, '', self.manana)
+        turno.fecha_entrega = self.hoy
+        turno.save(update_fields=['fecha_entrega'])
         self.assertEqual(turno.patente_vehiculo, '')
 
         # En panel del operador debe aparecer el campo de patente para este turno
@@ -547,7 +551,7 @@ class WeatherDisplayTests(BaseSoltat):
 class RampasTests(BaseSoltat):
     """
     Reparto real: Massalin rampas 1-2 y Alliance One 3-5 (prioridad a la mañana);
-    Cooperativa las 5 (prioridad a la tarde). Un turno por rampa y franja.
+    Cooperativa las 5 (prioridad a la tarde). Un camión por rampa a la vez.
     """
 
     def setUp(self):
@@ -557,120 +561,249 @@ class RampasTests(BaseSoltat):
         self.coop.save()
         self.massalin = EmpresaAcopio.objects.create_user(
             username='mas', password='x', cuit_dni='30776655443', nombre='Massalin',
-            capacidad_franja_kg=30_000,
+            capacidad_franja_kg=30_000, velocidad_descarga_kg_hora=15_000,
         )
         self.alliance = EmpresaAcopio.objects.create_user(
             username='aot', password='x', cuit_dni='30665544332', nombre='Alliance One',
-            capacidad_franja_kg=30_000,
+            capacidad_franja_kg=35_000, velocidad_descarga_kg_hora=17_500,
         )
         for rampa in Rampa.objects.all():
             rampa.empresas.add(self.massalin if rampa.numero <= 2 else self.alliance)
         self.rec_massalin = Recorredor.objects.create_user(
             username='recm', password='x', cuit_dni='20111111113', empresa_asignada=self.massalin,
         )
-        CupoProductor.objects.create(productor=self.productor, recorredor=self.rec_massalin, cupo_maximo=100_000)
+        CupoProductor.objects.create(productor=self.productor, recorredor=self.rec_massalin, cupo_maximo=500_000)
         self.pasado_manana = self.hoy + timedelta(days=2)
-        # Antes de que empiece cualquier franja del día.
+        # Antes de que empiece cualquier tramo del día.
         self.temprano = timezone.make_aware(datetime.combine(self.hoy, time(5, 0)))
 
-    def ocupar(self, empresa, fecha, franja, numero):
-        return Turno.objects.create(
+    def ocupar(self, empresa, fecha, desde, hasta, numero):
+        """Turno confirmado que ocupa la rampa `numero` de `desde` a `hasta` (horas, ej. 6 y 8.5)."""
+        t = Turno.objects.create(
             codigo=services.generar_codigo_turno(fecha), productor=self.productor, empresa=empresa,
-            kilos_estimados=1_000, fecha_entrega=fecha, franja_horaria=franja,
-            rampa=Rampa.objects.get(numero=numero), estado=EstadoTurno.CONFIRMADO,
+            kilos_estimados=1_000, fecha_entrega=fecha, estado=EstadoTurno.CONFIRMADO,
             corte_tabaco=CorteTabaco.MEDIANA,
         )
+        return services.reservar_bloque(t, int(desde * 60), int(hasta * 60), Rampa.objects.get(numero=numero))
 
     def ocupar_tarde(self, fecha):
-        for franja in ('14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00'):
-            for numero in range(1, 6):
-                self.ocupar(self.coop, fecha, franja, numero)
+        for numero in range(1, 6):
+            self.ocupar(self.coop, fecha, 14, 22, numero)
 
     def buscar(self, empresa, fecha, kilos=1_000):
-        return services.buscar_franja_y_rampa(empresa, fecha, kilos, ahora=self.temprano)
+        return services.buscar_bloque(empresa, fecha, kilos, ahora=self.temprano)
 
-    def test_turno_asignado_tiene_rampa(self):
+    def test_turno_asignado_tiene_rampa_y_horario(self):
         turno = self.recorredor.asignar_turno(self.productor, 1_000, CorteTabaco.MEDIANA, 'AA1', self.pasado_manana)
         self.assertIsNotNone(turno.rampa)
+        self.assertEqual(turno.hora_inicio, time(14, 0))  # la Cooperativa empieza por la tarde
+        self.assertEqual(turno.ocupaciones.count(), 1)
 
-    def test_confirmar_asigna_rampa(self):
+    def test_confirmar_asigna_rampa_y_horario(self):
         turno = self.solicitar(kilos=1_000)
         self.recorredor.confirmar_turno(turno)
         turno.refresh_from_db()
         self.assertIsNotNone(turno.rampa)
+        self.assertIsNotNone(turno.hora_inicio)
 
     def test_cada_empresa_usa_solo_sus_rampas(self):
-        franja, rampa = self.buscar(self.massalin, self.pasado_manana)
-        self.assertIn(rampa.numero, (1, 2))
-        franja, rampa = self.buscar(self.alliance, self.pasado_manana)
-        self.assertIn(rampa.numero, (3, 4, 5))
+        self.assertIn(self.buscar(self.massalin, self.pasado_manana)[2].numero, (1, 2))
+        self.assertIn(self.buscar(self.alliance, self.pasado_manana)[2].numero, (3, 4, 5))
 
-    def test_un_turno_por_rampa_y_franja(self):
-        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
-        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), ('06:00 - 08:00', Rampa.objects.get(numero=2)))
-        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 2)
-        franja, rampa = self.buscar(self.massalin, self.pasado_manana)
-        self.assertEqual(franja, '08:00 - 10:00')
+    def test_una_rampa_atiende_un_camion_a_la_vez(self):
+        self.ocupar(self.massalin, self.pasado_manana, 6, 8, 1)
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana)[2].numero, 2)
+        self.ocupar(self.massalin, self.pasado_manana, 6, 8, 2)
+        inicio, fin, rampa = self.buscar(self.massalin, self.pasado_manana)
+        self.assertEqual(inicio, 8 * 60)
 
-    def test_la_base_de_datos_impide_dos_turnos_en_la_misma_rampa_y_franja(self):
-        from django.db import IntegrityError, transaction
-        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            self.ocupar(self.coop, self.pasado_manana, '06:00 - 08:00', 1)
+    def test_la_base_de_datos_impide_superposiciones_en_una_rampa(self):
+        self.ocupar(self.massalin, self.pasado_manana, 6, 9, 1)
+        with self.assertRaises(services.HorarioOcupadoError):
+            self.ocupar(self.coop, self.pasado_manana, 8.5, 10, 1)  # se pisa de 08:30 a 09:00
+
+    def test_turnos_contiguos_en_la_misma_rampa(self):
+        self.ocupar(self.massalin, self.pasado_manana, 6, 8, 1)
+        self.ocupar(self.massalin, self.pasado_manana, 8, 10, 1)  # empieza justo cuando termina el otro
+        self.assertEqual(Turno.objects.filter(rampa__numero=1).count(), 2)
 
     def test_un_turno_cancelado_libera_la_rampa(self):
-        t = self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
-        t.estado = EstadoTurno.CANCELADO
-        t.save()
-        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), ('06:00 - 08:00', Rampa.objects.get(numero=1)))
+        t = self.ocupar(self.massalin, self.pasado_manana, 6, 8, 1)
+        self.ocupar(self.massalin, self.pasado_manana, 6, 8, 2)
+        services.cancelar_turno_productor(self.productor, t, 'No llego')
+        self.assertFalse(t.ocupaciones.exists())
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana)[:2], (6 * 60, 6 * 60 + 30))
 
     def test_cada_empresa_busca_primero_en_su_horario_preferente(self):
-        self.assertEqual(self.buscar(self.coop, self.pasado_manana)[0], '14:00 - 16:00')
-        self.assertEqual(self.buscar(self.massalin, self.pasado_manana)[0], '06:00 - 08:00')
+        self.assertEqual(self.buscar(self.coop, self.pasado_manana)[0], 14 * 60)
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana)[0], 6 * 60)
 
     def test_cooperativa_no_toma_rampas_de_la_manana_en_dias_futuros(self):
         self.ocupar_tarde(self.pasado_manana)
-        self.assertEqual(self.buscar(self.coop, self.pasado_manana), (None, None))
-        with self.assertRaises(services.CupoExcedidoError):
+        self.assertEqual(self.buscar(self.coop, self.pasado_manana), (None, None, None))
+        with self.assertRaises(services.CupoExcedidoError) as error:
             self.recorredor.asignar_turno(self.productor, 1_000, CorteTabaco.MEDIANA, 'AA1', self.pasado_manana)
+        self.assertIn('Próximo horario disponible', str(error.exception))
 
     def test_massalin_no_toma_rampas_de_la_tarde_en_dias_futuros(self):
-        for franja in ('06:00 - 08:00', '08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00'):
-            for numero in (1, 2):
-                self.ocupar(self.massalin, self.pasado_manana, franja, numero)
-        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), (None, None))
+        for numero in (1, 2):
+            self.ocupar(self.massalin, self.pasado_manana, 6, 14, numero)
+        self.assertEqual(self.buscar(self.massalin, self.pasado_manana), (None, None, None))
+
+    def test_prioridad_por_tramo_un_turno_no_puede_cruzar_a_la_tarde_de_otra(self):
+        # Massalin con 60.000 kg (4 h a 15.000 kg/h) y sus rampas ocupadas de 08:00 a 11:00:
+        # a la mañana no entran 4 h seguidas, y cruzar a la tarde no puede porque desde
+        # las 14:00 la rampa es de la Cooperativa.
+        for numero in (1, 2):
+            self.ocupar(self.massalin, self.pasado_manana, 8, 11, numero)
+        inicio, fin, rampa = self.buscar(self.massalin, self.pasado_manana, kilos=60_000)
+        self.assertIsNone(inicio)
+        # El mismo día la rampa se libera y sí puede cruzar.
+        temprano_ese_dia = timezone.make_aware(datetime.combine(self.pasado_manana, time(5, 0)))
+        inicio, fin, rampa = services.buscar_bloque(self.massalin, self.pasado_manana, 60_000,
+                                                    ahora=temprano_ese_dia)
+        self.assertEqual((inicio, fin), (11 * 60, 15 * 60))
 
     def test_el_mismo_dia_se_liberan_las_rampas_libres(self):
         self.ocupar_tarde(self.hoy)
-        franja, rampa = self.buscar(self.coop, self.hoy)
-        self.assertEqual(franja, '06:00 - 08:00')
-        self.assertEqual(rampa.numero, 1)
+        inicio, fin, rampa = self.buscar(self.coop, self.hoy)
+        self.assertEqual((inicio, rampa.numero), (6 * 60, 1))
 
     def test_confirmar_pasa_al_dia_siguiente_si_su_horario_esta_lleno(self):
         self.ocupar_tarde(self.pasado_manana)
-        fecha, franja, rampa = services.buscar_proxima_disponibilidad(
+        fecha, inicio, fin, rampa = services.buscar_proxima_disponibilidad(
             self.coop, 1_000, desde_fecha=self.pasado_manana,
         )
         self.assertEqual(fecha, self.pasado_manana + timedelta(days=1))
-        self.assertEqual(franja, '14:00 - 16:00')
+        self.assertEqual(inicio, 14 * 60)
 
-    def test_ocupacion_de_rampas_de_la_empresa(self):
-        self.ocupar(self.massalin, self.pasado_manana, '06:00 - 08:00', 1)
+    def test_linea_de_tiempo_de_la_empresa(self):
+        self.ocupar(self.massalin, self.pasado_manana, 6, 8, 1)
         grilla = services.ocupacion_rampas(self.coop, self.pasado_manana, hoy=self.hoy)
-        fila = grilla['filas'][0]
-        self.assertFalse(fila['preferente'])
-        estados = [c['estado'] for c in fila['celdas']]
-        self.assertEqual(estados, ['otra', 'reservada', 'reservada', 'reservada', 'reservada'])
-        self.assertTrue(all(c['estado'] == 'libre' for c in grilla['filas'][4]['celdas']))
+        rampa1 = grilla['filas'][0]
+        self.assertEqual(len(rampa1['bloques']), 1)
+        self.assertEqual(rampa1['bloques'][0]['estado'], 'otra')
+        self.assertEqual(rampa1['bloques'][0]['ancho'], 12.5)  # 2 h de 16 h
+        self.assertEqual(len(rampa1['reservas']), 1)  # la mañana es de Massalin
 
     def test_paneles_muestran_las_rampas(self):
-        self.ocupar(self.massalin, self.hoy, '06:00 - 08:00', 1)
+        self.ocupar(self.massalin, self.hoy, 6, 8, 1)
         self.client.force_login(self.massalin)
         r = self.client.get(reverse('turnos:panel_empresa'))
         self.assertContains(r, 'Sus rampas de descarga')
+        self.assertContains(r, 'lt-bloque')
         self.client.force_login(self.operador)
         r = self.client.get(reverse('turnos:panel_operador'))
         self.assertContains(r, 'Rampas de descarga')
+        self.assertContains(r, '06:00 a 08:00')
+
+
+class DuracionTests(BaseSoltat):
+    """Turnos de duración variable según los kilos (velocidad 17.500 kg/h por defecto)."""
+
+    def setUp(self):
+        super().setUp()
+        self.empresa.capacidad_diaria_kg = 300_000
+        self.empresa.save()
+        CupoProductor.objects.create(productor=self.productor, recorredor=self.recorredor, cupo_maximo=1_000_000)
+        self.fecha = self.hoy + timedelta(days=2)
+
+    def test_duracion_segun_kilos_redondeada_a_30_min(self):
+        casos = {50: 30, 17_500: 60, 17_501: 90, 35_000: 120, 52_500: 180, 70_000: 240,
+                 87_500: 300, 100_000: 360}
+        for kilos, minutos in casos.items():
+            self.assertEqual(services.duracion_turno(self.empresa, kilos), minutos, kilos)
+
+    def test_duracion_usa_la_velocidad_de_cada_empresa(self):
+        self.empresa.velocidad_descarga_kg_hora = 20_000
+        self.assertEqual(services.duracion_turno(self.empresa, 100_000), 300)
+        self.empresa.velocidad_descarga_kg_hora = 15_000
+        self.assertEqual(services.duracion_turno(self.empresa, 100_000), 420)
+
+    def test_100_mil_kilos_en_un_solo_turno_continuo(self):
+        turno = self.recorredor.asignar_turno(self.productor, 100_000, CorteTabaco.MEDIANA, 'AA1', self.fecha)
+        self.assertEqual((turno.hora_inicio, turno.hora_fin), (time(6, 0), time(12, 0)))
+        self.assertEqual(turno.duracion_min, 360)
+        self.assertEqual(turno.horario_display, '06:00 a 12:00')
+        self.assertEqual(turno.duracion_display, '6 h')
+        self.assertEqual(turno.ocupaciones.count(), 12)  # 12 tramos de 30 min en una rampa
+
+    def test_kilos_por_encima_de_la_vieja_franja_se_aceptan(self):
+        turno = self.solicitar(kilos=31_000)  # antes superaba la capacidad por franja
+        self.assertEqual(turno.estado, EstadoTurno.PENDIENTE)
+
+    def test_bloque_continuo_saltea_huecos_cortos(self):
+        rampa = Rampa.objects.get(numero=1)
+        Rampa.objects.exclude(pk=rampa.pk).update(activa=False)
+        t = Turno.objects.create(
+            codigo='X1', productor=self.productor, empresa=self.empresa, kilos_estimados=1_000,
+            fecha_entrega=self.fecha, estado=EstadoTurno.CONFIRMADO, corte_tabaco=CorteTabaco.BAJERA,
+        )
+        services.reservar_bloque(t, 8 * 60, 9 * 60, rampa)  # rampa ocupada de 08:00 a 09:00
+        # 35.000 kg = 2 h: el hueco 06:00-08:00 entra justo; 52.500 kg = 3 h ya no.
+        self.assertEqual(services.buscar_bloque(self.empresa, self.fecha, 35_000)[:2], (360, 480))
+        self.assertEqual(services.buscar_bloque(self.empresa, self.fecha, 52_500)[:2], (540, 720))
+
+    def test_no_supera_el_horario_de_cierre(self):
+        rampa = Rampa.objects.get(numero=1)
+        Rampa.objects.exclude(pk=rampa.pk).update(activa=False)
+        t = Turno.objects.create(
+            codigo='X2', productor=self.productor, empresa=self.empresa, kilos_estimados=1_000,
+            fecha_entrega=self.fecha, estado=EstadoTurno.CONFIRMADO, corte_tabaco=CorteTabaco.BAJERA,
+        )
+        services.reservar_bloque(t, 6 * 60, 19 * 60, rampa)
+        # Quedan 3 h (19 a 22): 4 h de descarga no entran ese día.
+        self.assertEqual(services.buscar_bloque(self.empresa, self.fecha, 70_000), (None, None, None))
+        inicio, fin, _ = services.buscar_bloque(self.empresa, self.fecha, 52_500)
+        self.assertEqual((inicio, fin), (19 * 60, 22 * 60))
+
+    def test_un_turno_que_no_entra_en_un_dia_se_rechaza(self):
+        with self.assertRaises(services.TurnoError):
+            self.solicitar(kilos=300_001)  # supera la capacidad diaria
+        self.empresa.capacidad_diaria_kg = 300_000
+        self.empresa.velocidad_descarga_kg_hora = 15_000
+        self.empresa.save()
+        with self.assertRaises(services.TurnoError):
+            self.solicitar(kilos=250_000)  # 16 h 40 min: más que el horario del acopio
+
+    def test_respeta_la_capacidad_diaria_con_turnos_largos(self):
+        self.empresa.capacidad_diaria_kg = 200_000
+        self.empresa.save()
+        self.recorredor.asignar_turno(self.productor, 100_000, CorteTabaco.MEDIANA, 'A', self.fecha)
+        self.recorredor.asignar_turno(self.productor, 90_000, CorteTabaco.MEDIANA, 'B', self.fecha)
+        with self.assertRaises(services.CupoExcedidoError):
+            self.recorredor.asignar_turno(self.productor, 20_000, CorteTabaco.MEDIANA, 'C', self.fecha)
+
+    def test_turnos_largos_simultaneos_usan_distintas_rampas(self):
+        a = self.recorredor.asignar_turno(self.productor, 70_000, CorteTabaco.MEDIANA, 'A', self.fecha)
+        b = self.recorredor.asignar_turno(self.productor, 70_000, CorteTabaco.MEDIANA, 'B', self.fecha)
+        self.assertEqual(a.hora_inicio, b.hora_inicio)
+        self.assertNotEqual(a.rampa, b.rampa)
+
+    def test_turnos_anteriores_sin_horario_se_muestran_con_su_franja(self):
+        viejo = self.turno_pasado(1, EstadoTurno.DESCARGADO, kilos_reales=10_000)
+        self.assertIsNone(viejo.hora_inicio)
+        self.assertEqual(viejo.horario_display, '06:00 a 08:00')
+        self.assertEqual(viejo.duracion_display, '2 h')
+
+    def test_ocupacion_por_hora_reparte_los_kilos_del_turno(self):
+        self.recorredor.asignar_turno(self.productor, 35_000, CorteTabaco.MEDIANA, 'A', self.fecha)  # 06 a 08
+        horas = services.ocupacion_por_hora(self.empresa, self.fecha)
+        self.assertEqual([h['ocupados'] for h in horas[:3]], [17_500, 17_500, 0])
+        self.assertEqual(horas[0]['capacidad'], 17_500 * 5)
+
+    def test_solicitar_muestra_la_duracion_estimada(self):
+        self.client.force_login(self.productor)
+        r = self.client.get(reverse('turnos:solicitar_turno'))
+        self.assertContains(r, 'velocidades-descarga')
+        self.assertContains(r, 'duracion-estimada')
+
+    def test_mis_turnos_muestra_inicio_fin_y_duracion(self):
+        self.recorredor.asignar_turno(self.productor, 100_000, CorteTabaco.MEDIANA, 'AA1', self.fecha)
+        self.client.force_login(self.productor)
+        r = self.client.get(reverse('turnos:mis_turnos'))
+        self.assertContains(r, '06:00 a 12:00')
+        self.assertContains(r, '6 h')
 
 
 class GraficosTests(BaseSoltat):
@@ -707,7 +840,7 @@ class GraficosTests(BaseSoltat):
         self.assertEqual(len(datos['empresaDias']['kilos']), graficos.DIAS_HISTORIAL_EMPRESA)
         self.assertEqual(datos['empresaDias']['kilos'][-2], 9_000)  # ayer
         self.assertEqual(datos['empresaDias']['capacidad'], self.empresa.capacidad_diaria_kg)
-        self.assertEqual(len(datos['empresaFranjas']['kilos']), 8)
+        self.assertEqual(len(datos['empresaHoras']['kilos']), 16)  # una barra por hora de 06 a 22
         self.assertEqual(datos['empresaCortes']['valores'], [0, 9_000, 0])
         self.assertNotIn('empresaEstados', datos)
 

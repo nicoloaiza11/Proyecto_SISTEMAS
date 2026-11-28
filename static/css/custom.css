@@ -1097,3 +1097,37 @@ body.hide-proto-markers .proto-only-inline {
 .leyenda.rampa-otra { background-color: #EDE9DF; }
 .leyenda.rampa-reservada { background-color: var(--color-accent-soft); }
 .leyenda.rampa-libre { background-color: #fff; }
+
+/* ---------------------------------------------------------------------------
+   Línea de tiempo de rampas (turnos de duración variable)
+--------------------------------------------------------------------------- */
+.linea-tiempo { min-width: 640px; }
+.lt-fila { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem; }
+.lt-rotulo { width: 70px; flex-shrink: 0; font-size: 0.78rem; font-weight: 700; color: var(--color-text); }
+.lt-pista {
+  position: relative; flex-grow: 1; height: 34px; border-radius: 6px;
+  background-color: var(--color-surface-warm); border: 1px solid var(--color-surface-muted);
+}
+.lt-encabezado .lt-pista { height: 18px; background: none; border: none; }
+.lt-marca { position: absolute; transform: translateX(-50%); font-size: 0.7rem; color: #6b7377; white-space: nowrap; }
+.lt-guia { position: absolute; top: 0; bottom: 0; width: 1px; background-color: rgba(38, 50, 56, 0.07); }
+.lt-preferente { position: absolute; top: 0; bottom: 0; background-color: rgba(31, 138, 104, 0.06); }
+.lt-reserva {
+  position: absolute; top: 0; bottom: 0;
+  background: repeating-linear-gradient(45deg, var(--color-accent-soft), var(--color-accent-soft) 6px, #f3e4c2 6px, #f3e4c2 12px);
+}
+.lt-bloque {
+  position: absolute; top: 3px; bottom: 3px; border-radius: 4px; padding: 0 6px;
+  font-size: 0.7rem; font-weight: 600; line-height: 28px; text-decoration: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+.lt-propia { background-color: #1f8a68; color: #fff; }
+.lt-propia:hover { background-color: #17694f; color: #fff; }
+.lt-otra { background-color: #c9cfd2; color: #263238; }
+.lt-otra:hover { color: #263238; }
+.leyenda.lt-leyenda-preferente { background-color: rgba(31, 138, 104, 0.15); }
+.leyenda.rampa-propia { background-color: #1f8a68; }
+.leyenda.rampa-otra { background-color: #c9cfd2; }
+.leyenda.rampa-reservada { background: repeating-linear-gradient(45deg, var(--color-accent-soft), var(--color-accent-soft) 3px, #f3e4c2 3px, #f3e4c2 6px); }
+.leyenda.rampa-libre { background-color: var(--color-surface-warm); }
